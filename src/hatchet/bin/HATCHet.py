@@ -670,23 +670,29 @@ def parse_clonal_diploid(clonal):
             )
         )
 
-    candidate_second = [t for t in clonal_list if t[0] != my_diploid[0] and t[1] + t[2] != 2]
-    if len(candidate_second) == 0:
-        raise ValueError(
-            error(
-                'No cluster with total copy number different from 2 was included '
-                "in 'clonal'. At least one such cluster is required for this argument to be used with "
-                "'diploid'=True."
+    if len(clonal_list) > 1:
+        candidate_second = [t for t in clonal_list if t[0] != my_diploid[0] and t[1] + t[2] != 2]
+        if len(candidate_second) == 0:
+            raise ValueError(
+                error(
+                    'No cluster with total copy number different from 2 was included '
+                    "in 'clonal'. At least one such cluster is required for this argument to be used with "
+                    "'diploid'=True (required by cpp solving code, not by theorem)."
+                )
             )
-        )
+        else:
+            my_second = candidate_second[0]
+        used_clusters = set([my_diploid[0], my_second[0]])
     else:
-        my_second = candidate_second[0]
-    used_clusters = set([my_diploid[0], my_second[0]])
+        my_second = None
+        used_clusters = set([my_diploid[0]])
 
     clonal = ','.join(
         [
             ':'.join(t2s(t))
-            for t in [my_diploid] + [my_second] + [t2 for t2 in clonal_list if t2[0] not in used_clusters]
+            for t in [my_diploid]
+            + ([my_second] if my_second is not None else [])
+            + [t2 for t2 in clonal_list if t2[0] not in used_clusters]
         ]
     )
     log(
@@ -1097,8 +1103,9 @@ def findClonalClusters(fseg, neutral, size, tB, tR, samples, v):
             num = float(2 * d - 2 * r)
             denom = float(2 * r + 2 * d - c * d)
             if denom == 0:
-                raise ValueError(f"Purity denominator is 0: d={d}, c={c}, r={r}, num={num}, denom={denom}")
-            return regPurity( num/ denom)
+                raise ValueError(f'Purity denominator is 0: d={d}, c={c}, r={r}, num={num}, denom={denom}')
+            return regPurity(num / denom)
+
         calcScalingFactor = lambda p, d: float(2.0 + 2.0 * p) / float(d)
         calcFraction = lambda p, cn: float(2.0 * (1.0 - p) + sum(cn) * p)
         calcRDR = lambda p, cn, s: calcFraction(p, cn) / float(s)

@@ -1,7 +1,9 @@
 import sys
 from io import StringIO
+import os
 import os.path
 import glob
+import re
 import argparse
 
 from hatchet import config
@@ -339,31 +341,37 @@ def main(args=None):
 
     if config.run.plot_bins:
         os.makedirs(f'{output}/plots', exist_ok=True)
-        plot_bins(
-            args=[
-                f'{output}/bbc/bulk.bbc',
-                '--rundir',
-                f'{output}/plots',
-                '--ymin',
-                '0',
-                '--ymax',
-                '3',
-            ]
-        )
+        plot_bins_args = [
+            f'{output}/bbc/bulk.bbc',
+            '--rundir',
+            f'{output}/plots',
+        ]
+        if config.plot_bins.xmin is not None:
+            plot_bins_args += ['--xmin', str(config.plot_bins.xmin)]
+        if config.plot_bins.xmax is not None:
+            plot_bins_args += ['--xmax', str(config.plot_bins.xmax)]
+        if config.plot_bins.ymin is not None:
+            plot_bins_args += ['--ymin', str(config.plot_bins.ymin)]
+        if config.plot_bins.ymax is not None:
+            plot_bins_args += ['--ymax', str(config.plot_bins.ymax)]
+        plot_bins(args=plot_bins_args)
 
         os.makedirs(f'{output}/plots/1d2d', exist_ok=True)
-        plot_bins_1d2d(
-            args=[
-                '-b',
-                f'{output}/bbc/bulk.bbc',
-                '-s',
-                f'{output}/bbc/bulk.seg',
-                '--outdir',
-                f'{output}/plots/1d2d',
-                '--centers',
-                '--centromeres',
-            ]
-        )
+        plot_bins_1d2d_args = [
+            '-b',
+            f'{output}/bbc/bulk.bbc',
+            '-s',
+            f'{output}/bbc/bulk.seg',
+            '--outdir',
+            f'{output}/plots/1d2d',
+            '--centers',
+            '--centromeres',
+        ]
+        if config.plot_bins_1d2d.baflim is not None:
+            plot_bins_1d2d_args += ['--baflim', str(config.plot_bins_1d2d.baflim)]
+        if config.plot_bins_1d2d.fcnlim is not None:
+            plot_bins_1d2d_args += ['--rdrlim', str(config.plot_bins_1d2d.fcnlim)]
+        plot_bins_1d2d(args=plot_bins_1d2d_args)
 
     # ----------------------------------------------------
 
@@ -375,18 +383,51 @@ def main(args=None):
 
     if config.run.plot_cn:
         os.makedirs(f'{output}/summary', exist_ok=True)
-        plot_cn(
-            args=[
-                f'{output}/results/best.bbc.ucn',
-                '--rundir',
-                f'{output}/summary',
-            ]
-        )
+        plot_cn_args = [
+            f'{output}/results/best.bbc.ucn',
+            '--rundir',
+            f'{output}/summary',
+        ]
+        if config.plot_cn.ymin is not None:
+            plot_cn_args += ['--ymin', str(config.plot_cn.ymin)]
+        if config.plot_cn.ymax is not None:
+            plot_cn_args += ['--ymax', str(config.plot_cn.ymax)]
+        plot_cn(args=plot_cn_args)
 
         os.makedirs(f'{output}/summary/1d2d', exist_ok=True)
-        plot_cn_1d2d(
-            args=[f'{output}/results/best.bbc.ucn', '--outdir', f'{output}/summary/1d2d', '--bysample', '--centromeres']
-        )
+        plot_cn_1d2d_args = [
+            f'{output}/results/best.bbc.ucn',
+            '--outdir',
+            f'{output}/summary/1d2d',
+            '--bysample',
+            '--centromeres',
+        ]
+        if config.plot_cn_1d2d.baflim is not None:
+            plot_cn_1d2d_args += ['--baflim', str(config.plot_cn_1d2d.baflim)]
+        if config.plot_cn_1d2d.fcnlim is not None:
+            plot_cn_1d2d_args += ['--fcnlim', str(config.plot_cn_1d2d.fcnlim)]
+        plot_cn_1d2d(args=plot_cn_1d2d_args)
+
+        if config.run.plot_all_solutions:
+            for ucn_file in sorted(glob.glob(f'{output}/results/results.*.bbc.ucn.tsv')):
+                basename = os.path.basename(ucn_file)
+                m = re.match(r'results\.(diploid|tetraploid)\.n(\d+)\.bbc\.ucn\.tsv', basename)
+                if not m:
+                    continue
+                subdir = f'{output}/summary/1d2d/{m.group(1)}_n{m.group(2)}'
+                os.makedirs(subdir, exist_ok=True)
+                sol_args = [
+                    ucn_file,
+                    '--outdir',
+                    subdir,
+                    '--bysample',
+                    '--centromeres',
+                ]
+                if config.plot_cn_1d2d.baflim is not None:
+                    sol_args += ['--baflim', str(config.plot_cn_1d2d.baflim)]
+                if config.plot_cn_1d2d.fcnlim is not None:
+                    sol_args += ['--fcnlim', str(config.plot_cn_1d2d.fcnlim)]
+                plot_cn_1d2d(args=sol_args)
 
 
 if __name__ == '__main__':
