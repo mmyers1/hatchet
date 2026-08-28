@@ -58,13 +58,13 @@ def main(args=None):
 
     chromosomes = []
     for chro in args['chromosomes']:
-        if chro.endswith('X') or chro.endswith('Y'):
-            log(
-                msg=f'Skipping chromosome {chro} (because it ends with X or Y)\n',
-                level='WARN',
-            )
-        else:
-            chromosomes.append(chro)
+        # if chro.endswith('X') or chro.endswith('Y'):
+        #     log(
+        #         msg=f'Skipping chromosome {chro} (because it ends with X or Y)\n',
+        #         level='WARN',
+        #     )
+        # else:
+        chromosomes.append(chro)
 
     n_instances = min(max(1, int(args['j'])), len(chromosomes))
     phaser = Phaser(
@@ -319,13 +319,20 @@ class Phaser(Worker):
         errname = os.path.join(self.outdir, f'{chromosome}_shapeit.log')
 
         # define params used across shapeit functions
-        inmap = f'{self.panel}/genetic_map_chr{chromosome}_combined_b37.txt'
-        inref = (
-            f'{self.panel}/1000GP_Phase3_chr{chromosome}.hap.gz '
-            f'{self.panel}/1000GP_Phase3_chr{chromosome}.legend.gz '
-            f'{self.panel}/1000GP_Phase3.sample'
-        )
-
+        if chromosome == 'X':
+            inmap = f'{self.panel}/genetic_map_chr{chromosome}_nonPAR_combined_b37.txt'
+            inref = (
+                f'{self.panel}/1000GP_Phase3_chr{chromosome}_NONPAR.hap.gz '
+                f'{self.panel}/1000GP_Phase3_chr{chromosome}_NONPAR.legend.gz '
+                f'{self.panel}/1000GP_Phase3.sample'
+            )
+        else:
+            inmap = f'{self.panel}/genetic_map_chr{chromosome}_combined_b37.txt'
+            inref = (
+                f'{self.panel}/1000GP_Phase3_chr{chromosome}.hap.gz '
+                f'{self.panel}/1000GP_Phase3_chr{chromosome}.legend.gz '
+                f'{self.panel}/1000GP_Phase3.sample'
+            )
         # check data with shapeit -check; get list of sites to exclude,
         # such as sites in target VCF that are not present in reference panel
         cmd_check = (
