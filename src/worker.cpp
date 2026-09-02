@@ -13,6 +13,7 @@ Worker::Worker(const DoubleMatrix& FA,
                const int base,
                const bool ampdel,
                const CNMap& cn,
+               const FixedMatrix& fixedMatrix,
                const int iterConvergence,
                const int maxIter,
                const int timeLimit,
@@ -33,6 +34,7 @@ Worker::Worker(const DoubleMatrix& FA,
     , _base(base)
     , _ampdel(ampdel)
     , _cn(cn)
+    , _fixedMatrix(fixedMatrix)
     , _iterConvergence(iterConvergence)
     , _maxIter(maxIter)
     , _timeLimit(timeLimit)
@@ -59,11 +61,12 @@ double Worker::solve()
 
     std::pair<IntMatrix, IntMatrix> hotstart;
     hotstart = IlpSubset::firstHotStart(_FA, _FB, _m, _k, _n, _cmax, _d, _base, _ampdel, _cn);
+    _fixedMatrix.applyCopyNumbers(hotstart.first, hotstart.second);
 
     while((iter_convergence < _iterConvergence) && (iter < _maxIter))
     {
         g_mutex.lock();
-        IlpSubset carch(_n, _m, _k, _cmax, _d, _mu, _base, _ampdel, _cn, _FA, _FB, _bins, _v);
+        IlpSubset carch(_n, _m, _k, _cmax, _d, _mu, _base, _ampdel, _cn, _FA, _FB, _bins, _fixedMatrix, _v);
         g_mutex.unlock();
 
         carch.fixU(_allU.empty() ? _M0 : _allU.back());
@@ -88,7 +91,7 @@ double Worker::solve()
         }
 
         g_mutex.lock();
-        IlpSubset uarch(_n, _m, _k, _cmax, _d, _mu, _base, _ampdel, _cn, _FA, _FB, _bins, _v);
+        IlpSubset uarch(_n, _m, _k, _cmax, _d, _mu, _base, _ampdel, _cn, _FA, _FB, _bins, _fixedMatrix, _v);
         g_mutex.unlock();
 
         uarch.fixC(_allCA.back(), _allCB.back());
@@ -120,5 +123,6 @@ double Worker::solve()
         ++iter;
     }
     assert(iter_convergence >= _iterConvergence | iter == _maxIter);
+    _fixedMatrix.verify(_allCA.back(), _allCB.back(), _allU.back());
     return _allObjU.back();
 }

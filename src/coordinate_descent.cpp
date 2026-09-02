@@ -12,6 +12,7 @@ CoordinateDescent::CoordinateDescent(const DoubleMatrix& FA,
                                      const int base,
                                      const bool ampdel,
                                      const CNMap& cn,
+                                     const FixedMatrix& fixedMatrix,
                                      const unsigned int iterConvergence,
                                      const unsigned int maxIter,
                                      const int nrSeeds,
@@ -32,6 +33,7 @@ CoordinateDescent::CoordinateDescent(const DoubleMatrix& FA,
     , _base(base)
     , _ampdel(ampdel)
     , _cn(cn)
+    , _fixedMatrix(fixedMatrix)
     , _iterConvergence(iterConvergence)
     , _maxIter(maxIter)
     , _nrSeeds(nrSeeds)
@@ -104,6 +106,7 @@ DoubleMatrix CoordinateDescent::buildRandomU()
         U.push_back(buildPartitionVector(non_zeros));
     }
     DoubleMatrix T(transpose(U));
+    _fixedMatrix.conditionProportions(T, _mu);
     log("SEED " + std::to_string(_seeds.size()) + ":\n" + toString(T), VERBOSITY_t::DEBUGGING, _v);
     return T;
 }
@@ -171,8 +174,8 @@ void CoordinateDescent::runWorker()
         }
         std::this_thread::sleep_for(std::chrono::seconds(2));
         if(seed > -1) {
-            Worker worker(_FA, _FB, _bins, _m, _k, _n, _cmax, _d, _mu, _base, _ampdel, _cn, _iterConvergence, _maxIter,
-                          _timeLimit, _memoryLimit, _nrILPthreads, _seeds[seed], seed, _v);
+            Worker worker(_FA, _FB, _bins, _m, _k, _n, _cmax, _d, _mu, _base, _ampdel, _cn, _fixedMatrix,
+                          _iterConvergence, _maxIter, _timeLimit, _memoryLimit, _nrILPthreads, _seeds[seed], seed, _v);
             double obj = worker.solve();
 
             {

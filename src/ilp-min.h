@@ -2,6 +2,7 @@
 #define ILPSUBSET_H
 
 #include "utils.h"
+#include "fixed_matrix.h"
 #include "gurobi-utils.h"
 #include <gurobi_c++.h>
 
@@ -22,6 +23,7 @@ public:
               const DoubleMatrix& FA,
               const DoubleMatrix& FB,
               const DoubleArray& w,
+              const FixedMatrix& fixedMatrix,
               const VERBOSITY_t v);
 
 
@@ -30,14 +32,15 @@ public:
     void fixU(const DoubleMatrix& barU)
     {
         _barU = barU;
+        _fixedMatrix.applyProportions(_barU);
         _mode = MODE_t::CARCH;
         for(int p = 0; p < _k; ++p)
         {
             double sum = 0.0;
             for(int i = 0; i < _n; ++i)
             {
-                sum += barU[i][p];
-                assert( (0.0 - TOL <= barU[i][p] && barU[i][p] <= 0.0 + TOL) || (barU[i][p] >= _mu - TOL) || i == 0);
+                sum += _barU[i][p];
+                assert( (0.0 - TOL <= _barU[i][p] && _barU[i][p] <= 0.0 + TOL) || (_barU[i][p] >= _mu - TOL) || i == 0);
             }
             assert(sum >= 1.0 - TOL && sum <= 1.0 + TOL);
         }
@@ -108,6 +111,8 @@ private:
     void buildSymmetryBreaking();
     ///
     void fixGivenCN();
+    /// Add sparse hard constraints supplied by the user
+    void fixMatrixEntries();
     /// Build objective
     void buildObjective();
     /// Add the constraint to avoid current solution and to find the next one
@@ -149,6 +154,8 @@ private:
     const DoubleMatrix& _FB;
     ///
     const DoubleArray& _w;
+    /// Sparse user-specified A, B, and U entries
+    const FixedMatrix& _fixedMatrix;
     ///
     const VERBOSITY_t _v;
     ///

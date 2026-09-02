@@ -12,6 +12,7 @@ IlpSubset::IlpSubset(const int n,
                      const DoubleMatrix& FA,
                      const DoubleMatrix& FB,
                      const DoubleArray& w,
+                     const FixedMatrix& fixedMatrix,
                      const VERBOSITY_t v)
     : _n(n)
     , _m(m)
@@ -25,6 +26,7 @@ IlpSubset::IlpSubset(const int n,
     , _FA(FA)
     , _FB(FB)
     , _w(w)
+    , _fixedMatrix(fixedMatrix)
     , _v(v)
     , _barCA()
     , _barCB()
@@ -61,6 +63,7 @@ void IlpSubset::fixC(const IntMatrix& barCA, const IntMatrix& barCB)
 {
     _barCA = barCA;
     _barCB = barCB;
+    _fixedMatrix.applyCopyNumbers(_barCA, _barCB);
     _mode = MODE_t::UARCH;
     for(int s = 0; s < _m; ++s)
     {
@@ -119,6 +122,7 @@ void IlpSubset::init()
         buildSymmetryBreaking();
         fixGivenCN();
     }
+    fixMatrixEntries();
 
     buildObjective();
     //test();
@@ -159,8 +163,16 @@ void IlpSubset::hotStart(const IntMatrix& hCA, const IntMatrix& hCB)
             }
         }
 
-        IntArray map = sort_indexes(rank);
-        assert(checkRank(hCA, hCB, map));
+        IntArray map(_n);
+        if(_fixedMatrix.empty())
+        {
+            map = sort_indexes(rank);
+            assert(checkRank(hCA, hCB, map));
+        }
+        else
+        {
+            std::iota(map.begin(), map.end(), 0);
+        }
 
         for(int s = 0; s < _m; ++s)
         {
@@ -986,7 +998,7 @@ void IlpSubset::buildSymmetryBreaking()
         for(int s = 0; s < _m; ++s)
         {
             sumI += _cA[s][i] * symmCoeff(s) + _cB[s][i] * symmCoeff(s);
-            sumI1 += _cA[s][i] * symmCoeff(s) + _cB[s][i] * symmCoeff(s);
+            sumI1 += _cA[s][i+1] * symmCoeff(s) + _cB[s][i+1] * symmCoeff(s);
         }
         _model.addConstr(sumI <= sumI1);
         sumI.clear();
@@ -1006,6 +1018,26 @@ void IlpSubset::fixGivenCN()
         {
             _model.addConstr(_cA[s][i] == cnstate.first);
             _model.addConstr(_cB[s][i] == cnstate.second);
+        }
+    }
+}
+
+void IlpSubset::fixMatrixEntries()
+{
+    const std::vector<FixedMatrixEntry>& entries = _fixedMatrix.entries();
+    for(std::vector<FixedMatrixEntry>::const_iterator it = entries.begin(); it != entries.end(); ++it)
+    {
+        if(it->matrix == MATRIX_A && (_mode == MODE_t::FULL || _mode == MODE_t::CARCH))
+        {
+            _model.addConstr(_cA[it->row][it->column] == it->value);
+        }
+        else if(it->matrix == MATRIX_B && (_mode == MODE_t::FULL || _mode == MODE_t::CARCH))
+        {
+            _model.addConstr(_cB[it->row][it->column] == it->value);
+        }
+        else if(it->matrix == MATRIX_U && (_mode == MODE_t::FULL || _mode == MODE_t::UARCH))
+        {
+            _model.addConstr(_u[it->row][it->column] == it->value);
         }
     }
 }

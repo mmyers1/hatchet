@@ -1,0 +1,1015 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HATCHet Fixed Matrix Editor</title>
+    <style>
+        :root {
+            --ink: #16252d;
+            --muted: #5d6d73;
+            --paper: #f7f9f8;
+            --surface: #ffffff;
+            --line: #cbd5d5;
+            --line-strong: #8ea1a3;
+            --teal: #007c83;
+            --teal-dark: #005d63;
+            --teal-soft: #dceff0;
+            --amber: #b86400;
+            --red: #a42a33;
+            --red-soft: #fde8ea;
+            --green: #28764b;
+            --shadow: 0 10px 26px rgba(18, 42, 48, 0.1);
+            --cell-width: 92px;
+            --row-label-width: 180px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+        }
+
+        body {
+            color: var(--ink);
+            background-color: var(--paper);
+            background-image:
+                linear-gradient(rgba(0, 124, 131, 0.035) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 124, 131, 0.035) 1px, transparent 1px);
+            background-size: 28px 28px;
+            font-family: "IBM Plex Sans", "Source Sans 3", "Noto Sans", sans-serif;
+            font-size: 14px;
+            letter-spacing: 0;
+        }
+
+        button,
+        input {
+            font: inherit;
+            letter-spacing: 0;
+        }
+
+        button,
+        .file-button {
+            min-height: 34px;
+            border: 1px solid var(--line-strong);
+            border-radius: 4px;
+            color: var(--ink);
+            background: var(--surface);
+            padding: 6px 12px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            white-space: nowrap;
+        }
+
+        button:hover,
+        .file-button:hover {
+            border-color: var(--teal);
+            color: var(--teal-dark);
+        }
+
+        button:disabled {
+            color: #8e999c;
+            border-color: #d7dddd;
+            background: #f1f3f2;
+            cursor: not-allowed;
+        }
+
+        button:focus-visible,
+        .file-button:focus-within,
+        input:focus-visible {
+            outline: 3px solid rgba(0, 124, 131, 0.23);
+            outline-offset: 1px;
+        }
+
+        .primary {
+            color: #ffffff;
+            border-color: var(--teal);
+            background: var(--teal);
+            font-weight: 650;
+        }
+
+        .primary:hover {
+            color: #ffffff;
+            border-color: var(--teal-dark);
+            background: var(--teal-dark);
+        }
+
+        .danger:hover {
+            color: var(--red);
+            border-color: var(--red);
+            background: var(--red-soft);
+        }
+
+        .app {
+            min-height: 100%;
+            display: grid;
+            grid-template-rows: auto auto minmax(0, 1fr) auto;
+        }
+
+        .masthead {
+            min-height: 68px;
+            padding: 12px 22px;
+            color: #ffffff;
+            background: #17353b;
+            border-bottom: 4px solid #d78b21;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .identity {
+            display: flex;
+            align-items: baseline;
+            gap: 14px;
+            min-width: 0;
+        }
+
+        .identity h1 {
+            margin: 0;
+            font-family: "IBM Plex Serif", "Source Serif 4", Georgia, serif;
+            font-size: 23px;
+            line-height: 1.1;
+            font-weight: 700;
+        }
+
+        .identity span {
+            color: #bed4d7;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .file-state {
+            min-width: 0;
+            text-align: right;
+        }
+
+        .file-state strong,
+        .file-state span {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-state span {
+            color: #bed4d7;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+
+        .setup-band {
+            padding: 12px 22px;
+            background: rgba(255, 255, 255, 0.95);
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            align-items: end;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .setup-band input[type="file"] {
+            position: absolute;
+            inline-size: 1px;
+            block-size: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .field {
+            display: grid;
+            gap: 4px;
+        }
+
+        .field label,
+        .field-label {
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .field input {
+            height: 34px;
+            border: 1px solid var(--line-strong);
+            border-radius: 4px;
+            background: var(--surface);
+            color: var(--ink);
+            padding: 5px 8px;
+        }
+
+        .field input[type="number"] {
+            width: 88px;
+        }
+
+        .spacer {
+            flex: 1 1 24px;
+        }
+
+        .workbench {
+            min-height: 0;
+            padding: 16px 22px 0;
+            display: grid;
+            grid-template-rows: auto minmax(260px, 1fr);
+            gap: 10px;
+        }
+
+        .matrix-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            flex-wrap: wrap;
+        }
+
+        .tabs {
+            display: inline-flex;
+            border: 1px solid var(--line-strong);
+            border-radius: 4px;
+            overflow: hidden;
+            background: var(--surface);
+        }
+
+        .tab {
+            min-width: 92px;
+            border: 0;
+            border-right: 1px solid var(--line-strong);
+            border-radius: 0;
+            min-height: 34px;
+        }
+
+        .tab:last-child {
+            border-right: 0;
+        }
+
+        .tab[aria-selected="true"] {
+            color: #ffffff;
+            background: var(--teal-dark);
+            font-weight: 700;
+        }
+
+        .search {
+            width: min(280px, 100%);
+            height: 34px;
+            border: 1px solid var(--line-strong);
+            border-radius: 4px;
+            background: var(--surface);
+            padding: 5px 10px;
+        }
+
+        .matrix-title {
+            color: var(--muted);
+            font-size: 12px;
+            font-family: "IBM Plex Mono", "Source Code Pro", monospace;
+            white-space: nowrap;
+        }
+
+        .grid-shell {
+            min-width: 0;
+            min-height: 0;
+            overflow: auto;
+            background: var(--surface);
+            border: 1px solid var(--line-strong);
+            border-radius: 5px 5px 0 0;
+            box-shadow: var(--shadow);
+            overscroll-behavior: contain;
+        }
+
+        table {
+            border-collapse: separate;
+            border-spacing: 0;
+            min-width: 100%;
+            table-layout: fixed;
+        }
+
+        th,
+        td {
+            height: 42px;
+            border-right: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+            padding: 0;
+            background: var(--surface);
+        }
+
+        thead th {
+            position: sticky;
+            top: 0;
+            z-index: 3;
+            width: var(--cell-width);
+            min-width: var(--cell-width);
+            color: #e9f4f4;
+            background: #264950;
+            font-size: 12px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        th.row-label {
+            position: sticky;
+            left: 0;
+            z-index: 2;
+            width: var(--row-label-width);
+            min-width: var(--row-label-width);
+            max-width: var(--row-label-width);
+            padding: 0 12px;
+            color: var(--ink);
+            background: #edf3f2;
+            text-align: left;
+            font-family: "IBM Plex Mono", "Source Code Pro", monospace;
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        thead th.row-label {
+            z-index: 4;
+            color: #ffffff;
+            background: #17353b;
+            font-family: "IBM Plex Sans", "Source Sans 3", sans-serif;
+            text-transform: uppercase;
+        }
+
+        td {
+            width: var(--cell-width);
+            min-width: var(--cell-width);
+            text-align: center;
+        }
+
+        tbody tr:nth-child(even) td {
+            background: #fbfcfc;
+        }
+
+        .matrix-input {
+            width: 100%;
+            height: 41px;
+            border: 0;
+            border-radius: 0;
+            color: var(--ink);
+            background: transparent;
+            padding: 7px 9px;
+            text-align: right;
+            font-family: "IBM Plex Mono", "Source Code Pro", monospace;
+            font-size: 13px;
+        }
+
+        .matrix-input:hover {
+            background: var(--teal-soft);
+        }
+
+        .matrix-input:focus {
+            position: relative;
+            z-index: 1;
+            background: #ffffff;
+            box-shadow: inset 0 0 0 2px var(--teal);
+            outline: 0;
+        }
+
+        .matrix-input.invalid {
+            color: var(--red);
+            background: var(--red-soft);
+            box-shadow: inset 0 0 0 1px var(--red);
+        }
+
+        .locked-cell {
+            height: 41px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 7px 10px;
+            color: #68777b;
+            background: repeating-linear-gradient(135deg, #eef1f0, #eef1f0 6px, #e4e9e8 6px, #e4e9e8 12px);
+            font-family: "IBM Plex Mono", "Source Code Pro", monospace;
+        }
+
+        .empty-state {
+            min-height: 290px;
+            display: grid;
+            place-items: center;
+            color: var(--muted);
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px dashed var(--line-strong);
+            font-family: "IBM Plex Mono", "Source Code Pro", monospace;
+        }
+
+        .status-band {
+            min-height: 54px;
+            padding: 9px 22px;
+            border-top: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.97);
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            align-items: center;
+            gap: 14px;
+        }
+
+        .status-count {
+            min-width: 112px;
+            color: var(--teal-dark);
+            font-weight: 750;
+        }
+
+        .validation {
+            min-width: 0;
+            color: var(--green);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .validation.error {
+            color: var(--red);
+        }
+
+        .validation.warning {
+            color: var(--amber);
+        }
+
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        @media (max-width: 720px) {
+            :root {
+                --row-label-width: 132px;
+                --cell-width: 82px;
+            }
+
+            .masthead {
+                align-items: flex-start;
+                padding: 11px 14px;
+            }
+
+            .identity {
+                display: grid;
+                gap: 4px;
+            }
+
+            .identity h1 {
+                font-size: 19px;
+            }
+
+            .file-state {
+                max-width: 42vw;
+            }
+
+            .setup-band,
+            .workbench,
+            .status-band {
+                padding-left: 14px;
+                padding-right: 14px;
+            }
+
+            .workbench {
+                padding-top: 12px;
+            }
+
+            .spacer {
+                display: none;
+            }
+
+            .tabs {
+                width: 100%;
+            }
+
+            .tab {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .search {
+                flex: 1 1 160px;
+            }
+
+            .matrix-title {
+                width: 100%;
+            }
+
+            .status-band {
+                grid-template-columns: 1fr;
+                gap: 2px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <header class="masthead">
+            <div class="identity">
+                <h1>HATCHet</h1>
+                <span>Fixed Matrix Editor</span>
+            </div>
+            <div class="file-state" aria-live="polite">
+                <strong id="seg-name">No SEG loaded</strong>
+                <span id="seg-shape">0 clusters x 0 samples</span>
+            </div>
+        </header>
+
+        <section class="setup-band" aria-label="Dataset and validation settings">
+            <div class="field">
+                <span class="field-label">Dataset</span>
+                <label class="file-button" for="seg-file">Open SEG</label>
+                <input id="seg-file" type="file" accept=".seg,.tsv,.txt,text/tab-separated-values">
+            </div>
+            <div class="field">
+                <label for="clone-count">Total clones</label>
+                <input id="clone-count" type="number" min="2" max="50" step="1" value="2">
+            </div>
+            <div class="field">
+                <label for="max-copy-number">Max copy number</label>
+                <input id="max-copy-number" type="number" min="1" step="1" value="6">
+            </div>
+            <div class="field">
+                <label for="min-proportion">Min proportion</label>
+                <input id="min-proportion" type="number" min="0" max="0.3" step="0.01" value="0.03">
+            </div>
+            <div class="spacer"></div>
+            <div class="field">
+                <span class="field-label">Constraints</span>
+                <label class="file-button" for="constraints-file">Import TSV</label>
+                <input id="constraints-file" type="file" accept=".tsv,.txt,text/tab-separated-values">
+            </div>
+            <button id="download" class="primary" type="button" disabled>Download TSV</button>
+        </section>
+
+        <main class="workbench">
+            <div class="matrix-toolbar">
+                <div class="tabs" role="tablist" aria-label="Factorization matrices">
+                    <button class="tab" type="button" role="tab" data-matrix="A" aria-selected="true">A allele</button>
+                    <button class="tab" type="button" role="tab" data-matrix="B" aria-selected="false">B allele</button>
+                    <button class="tab" type="button" role="tab" data-matrix="U" aria-selected="false">U
+                        mixture</button>
+                </div>
+                <label class="visually-hidden" for="filter">Filter rows</label>
+                <input id="filter" class="search" type="search" placeholder="Filter cluster or clone"
+                    autocomplete="off">
+                <span id="matrix-title" class="matrix-title">A[cluster, clone] integer copy number</span>
+                <div class="spacer"></div>
+                <button id="clear-matrix" class="danger" type="button">Clear matrix</button>
+                <button id="clear-all" class="danger" type="button">Clear all</button>
+            </div>
+            <div id="grid-shell" class="grid-shell" role="tabpanel" aria-label="A matrix">
+                <div class="empty-state">No SEG loaded</div>
+            </div>
+        </main>
+
+        <footer class="status-band">
+            <div id="fixed-count" class="status-count">0 fixed cells</div>
+            <div id="validation" class="validation" aria-live="polite">Load a SEG file to begin.</div>
+        </footer>
+    </div>
+
+    <script>
+        'use strict';
+
+        const FORMAT_MARKER = '# HATCHET_FIXED_ENTRIES 1';
+        const HEADER = 'matrix\trow\tcolumn\tvalue';
+        const MATRIX_TITLES = {
+            A: 'A[cluster, clone] integer copy number',
+            B: 'B[cluster, clone] integer copy number',
+            U: 'U[clone, sample] mixture proportion'
+        };
+        const state = {
+            active: 'A', clones: 2, clusters: [], samples: [], segName: '', filter: '',
+            values: { A: new Map(), B: new Map(), U: new Map() }
+        };
+        const elements = {
+            segFile: document.getElementById('seg-file'),
+            constraintsFile: document.getElementById('constraints-file'),
+            cloneCount: document.getElementById('clone-count'),
+            maxCopyNumber: document.getElementById('max-copy-number'),
+            minProportion: document.getElementById('min-proportion'),
+            download: document.getElementById('download'),
+            filter: document.getElementById('filter'),
+            clearMatrix: document.getElementById('clear-matrix'),
+            clearAll: document.getElementById('clear-all'),
+            grid: document.getElementById('grid-shell'),
+            fixedCount: document.getElementById('fixed-count'),
+            validation: document.getElementById('validation'),
+            matrixTitle: document.getElementById('matrix-title'),
+            segName: document.getElementById('seg-name'),
+            segShape: document.getElementById('seg-shape'),
+            tabs: Array.from(document.querySelectorAll('.tab'))
+        };
+
+        function cloneLabels() {
+            return ['normal'].concat(Array.from({ length: state.clones - 1 }, (_, index) => `clone${index + 1}`));
+        }
+        function key(row, column) { return `${row}\u001f${column}`; }
+        function unkey(value) { return value.split('\u001f'); }
+        function matrixRows(matrix) { return matrix === 'U' ? cloneLabels() : state.clusters; }
+        function matrixColumns(matrix) { return matrix === 'U' ? state.samples : cloneLabels(); }
+        function visibleRows(matrix) {
+            const needle = state.filter.trim().toLowerCase();
+            const rows = matrixRows(matrix);
+            return needle ? rows.filter((row) => row.toLowerCase().includes(needle)) : rows;
+        }
+        function isLocked(matrix, row, column) {
+            return (matrix === 'A' || matrix === 'B') && column === 'normal';
+        }
+        function setStatus(message, type = '') {
+            elements.validation.textContent = message;
+            elements.validation.className = `validation ${type}`.trim();
+        }
+        function escapeHtml(value) {
+            return String(value)
+                .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+        }
+
+        function parseSeg(text) {
+            const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
+            let headerIndex = -1;
+            let headers = [];
+            let clusterIndex = -1;
+            let sampleIndex = -1;
+            for (let index = 0; index < lines.length; index += 1) {
+                const fields = lines[index].split('\t');
+                const candidateCluster = fields.indexOf('#ID') >= 0 ? fields.indexOf('#ID') : fields.indexOf('ID');
+                const candidateSample = fields.indexOf('SAMPLE');
+                if (candidateCluster >= 0 && candidateSample >= 0) {
+                    headerIndex = index;
+                    headers = fields;
+                    clusterIndex = candidateCluster;
+                    sampleIndex = candidateSample;
+                    break;
+                }
+            }
+            if (headerIndex < 0) { throw new Error('SEG header must contain #ID and SAMPLE columns.'); }
+
+            const clusters = [];
+            const samples = [];
+            const clusterSet = new Set();
+            const sampleSet = new Set();
+            const pairs = new Set();
+            for (let index = headerIndex + 1; index < lines.length; index += 1) {
+                const line = lines[index];
+                if (!line.trim() || line.startsWith('#')) { continue; }
+                const fields = line.split('\t');
+                if (fields.length < headers.length) { throw new Error(`SEG line ${index + 1} has fewer columns than the header.`); }
+                const cluster = fields[clusterIndex];
+                const sample = fields[sampleIndex];
+                if (!cluster || !sample) { throw new Error(`SEG line ${index + 1} has an empty cluster or sample identifier.`); }
+                if (!clusterSet.has(cluster)) { clusterSet.add(cluster); clusters.push(cluster); }
+                if (!sampleSet.has(sample)) { sampleSet.add(sample); samples.push(sample); }
+                const pair = key(cluster, sample);
+                if (pairs.has(pair)) { throw new Error(`SEG repeats cluster ${cluster} in sample ${sample}.`); }
+                pairs.add(pair);
+            }
+            if (!clusters.length || !samples.length) { throw new Error('SEG file contains no cluster/sample rows.'); }
+            for (const cluster of clusters) {
+                for (const sample of samples) {
+                    if (!pairs.has(key(cluster, sample))) { throw new Error(`SEG cluster ${cluster} is missing sample ${sample}.`); }
+                }
+            }
+            return { clusters, samples };
+        }
+
+        function parseConstraintFile(text) {
+            const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
+            if (lines[0] !== FORMAT_MARKER) { throw new Error(`Line 1 must be ${FORMAT_MARKER}.`); }
+            let clones = null;
+            let headerIndex = -1;
+            for (let index = 1; index < lines.length; index += 1) {
+                const line = lines[index].trim();
+                const cloneMatch = line.match(/^#\s+clones\s+(\d+)\s*$/);
+                if (cloneMatch) {
+                    if (clones !== null) { throw new Error(`Line ${index + 1} repeats clone-count metadata.`); }
+                    clones = Number(cloneMatch[1]);
+                } else if (lines[index] === HEADER) {
+                    headerIndex = index;
+                    break;
+                }
+            }
+            if (!Number.isInteger(clones) || clones < 2 || clones > 50) {
+                throw new Error('Constraint file clone count must be an integer from 2 to 50.');
+            }
+            if (headerIndex < 0) { throw new Error(`Constraint file must contain the header ${HEADER}.`); }
+
+            const nextValues = { A: new Map(), B: new Map(), U: new Map() };
+            const cloneSet = new Set(['normal'].concat(Array.from({ length: clones - 1 }, (_, i) => `clone${i + 1}`)));
+            const clusterSet = new Set(state.clusters);
+            const sampleSet = new Set(state.samples);
+            for (let index = headerIndex + 1; index < lines.length; index += 1) {
+                const line = lines[index];
+                if (!line.trim() || line.trim().startsWith('#')) { continue; }
+                const fields = line.split('\t');
+                if (fields.length !== 4) { throw new Error(`Line ${index + 1} must contain four tab-separated fields.`); }
+                const [matrix, row, column, rawValue] = fields;
+                if (!Object.hasOwn(nextValues, matrix)) { throw new Error(`Line ${index + 1} uses unknown matrix ${matrix}.`); }
+                if (matrix === 'U') {
+                    if (!cloneSet.has(row) || !sampleSet.has(column)) {
+                        throw new Error(`Line ${index + 1} references an unknown clone or sample.`);
+                    }
+                } else if (!clusterSet.has(row) || !cloneSet.has(column)) {
+                    throw new Error(`Line ${index + 1} references an unknown cluster or clone.`);
+                }
+                const entryKey = key(row, column);
+                if (nextValues[matrix].has(entryKey)) { throw new Error(`Line ${index + 1} duplicates ${matrix}[${row}, ${column}].`); }
+                if (isLocked(matrix, row, column)) {
+                    if (rawValue.trim() !== '1') { throw new Error(`Line ${index + 1} must set normal ${matrix} to 1.`); }
+                    continue;
+                }
+                nextValues[matrix].set(entryKey, rawValue.trim());
+            }
+            return { clones, values: nextValues };
+        }
+
+        function numericSettings() {
+            return {
+                maxCopyNumber: Number(elements.maxCopyNumber.value),
+                minProportion: Number(elements.minProportion.value)
+            };
+        }
+        function validateValue(matrix, row, column, rawValue) {
+            const value = Number(rawValue);
+            const settings = numericSettings();
+            if (!rawValue.length || !Number.isFinite(value)) { return 'Value must be finite.'; }
+            if (matrix === 'A' || matrix === 'B') {
+                if (!/^\d+$/.test(rawValue) || !Number.isInteger(value)) { return 'Copy number must be a nonnegative integer.'; }
+                if (value > settings.maxCopyNumber) { return `Copy number exceeds ${settings.maxCopyNumber}.`; }
+            } else {
+                if (value < 0 || value > 1) { return 'Proportion must be in [0, 1].'; }
+                if (row !== 'normal' && value > 0 && value < settings.minProportion) {
+                    return `Tumor proportion is below ${settings.minProportion}.`;
+                }
+            }
+            return '';
+        }
+
+        function validateAll() {
+            const errors = [];
+            const settings = numericSettings();
+            if (!Number.isInteger(state.clones) || state.clones < 2 || state.clones > 50) {
+                errors.push('Total clones must be an integer from 2 to 50.');
+            }
+            if (!Number.isInteger(settings.maxCopyNumber) || settings.maxCopyNumber < 1) {
+                errors.push('Max copy number must be a positive integer.');
+            }
+            if (!Number.isFinite(settings.minProportion) || settings.minProportion < 0 || settings.minProportion > 0.3) {
+                errors.push('Min proportion must be in [0, 0.3].');
+            }
+            for (const matrix of ['A', 'B', 'U']) {
+                for (const [entryKey, rawValue] of state.values[matrix]) {
+                    const [row, column] = unkey(entryKey);
+                    const error = validateValue(matrix, row, column, rawValue);
+                    if (error) { errors.push(`${matrix}[${row}, ${column}]: ${error}`); }
+                }
+            }
+            for (const cluster of state.clusters) {
+                for (const clone of cloneLabels().slice(1)) {
+                    const a = state.values.A.get(key(cluster, clone));
+                    const b = state.values.B.get(key(cluster, clone));
+                    if (a !== undefined && b !== undefined && Number(a) + Number(b) > settings.maxCopyNumber) {
+                        errors.push(`A+B exceeds ${settings.maxCopyNumber} for cluster ${cluster}, ${clone}.`);
+                    }
+                }
+            }
+            for (const sample of state.samples) {
+                const entries = cloneLabels()
+                    .map((clone) => ({ clone, raw: state.values.U.get(key(clone, sample)) }))
+                    .filter((entry) => entry.raw !== undefined && Number.isFinite(Number(entry.raw)));
+                const sum = entries.reduce((total, entry) => total + Number(entry.raw), 0);
+                if (sum > 1.001) {
+                    errors.push(`Fixed U values for ${sample} sum to ${sum.toFixed(6)}, above 1.`);
+                } else if (entries.length === state.clones && Math.abs(sum - 1) > 0.001) {
+                    errors.push(`Fully fixed U values for ${sample} must sum to 1.`);
+                } else if (entries.length < state.clones) {
+                    const normalFree = !entries.some((entry) => entry.clone === 'normal');
+                    const residual = 1 - sum;
+                    if (!normalFree && residual > 0.001 && residual < settings.minProportion - 0.001) {
+                        errors.push(`Remaining U value for ${sample} is below min proportion.`);
+                    }
+                }
+            }
+            return errors;
+        }
+
+        function fixedCount() { return state.values.A.size + state.values.B.size + state.values.U.size; }
+        function refreshStatus(message = '') {
+            const count = fixedCount();
+            elements.fixedCount.textContent = `${count} fixed ${count === 1 ? 'cell' : 'cells'}`;
+            const errors = validateAll();
+            elements.download.disabled = !state.clusters.length || count === 0 || errors.length > 0;
+            if (message) { setStatus(message); }
+            else if (errors.length) {
+                setStatus(`${errors.length} validation ${errors.length === 1 ? 'error' : 'errors'}: ${errors[0]}`, 'error');
+            } else if (!state.clusters.length) { setStatus('Load a SEG file to begin.', 'warning'); }
+            else if (!count) { setStatus('No fixed entries. Blank cells remain solver variables.', 'warning'); }
+            else { setStatus('Constraints are ready to download.'); }
+
+            document.querySelectorAll('.matrix-input').forEach((input) => {
+                const error = validateValue(input.dataset.matrix, input.dataset.row, input.dataset.column, input.value.trim());
+                input.classList.toggle('invalid', Boolean(error));
+                input.title = error;
+            });
+        }
+
+        function renderGrid() {
+            elements.matrixTitle.textContent = MATRIX_TITLES[state.active];
+            elements.grid.setAttribute('aria-label', `${state.active} matrix`);
+            if (!state.clusters.length) {
+                elements.grid.innerHTML = '<div class="empty-state">No SEG loaded</div>';
+                refreshStatus();
+                return;
+            }
+            const rows = visibleRows(state.active);
+            const columns = matrixColumns(state.active);
+            const firstHeader = state.active === 'U' ? 'Clone' : 'Cluster';
+            let html = '<table><thead><tr>';
+            html += `<th class="row-label" scope="col">${escapeHtml(firstHeader)}</th>`;
+            for (const column of columns) { html += `<th scope="col">${escapeHtml(column)}</th>`; }
+            html += '</tr></thead><tbody>';
+            for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+                const row = rows[rowIndex];
+                html += `<tr><th class="row-label" scope="row" title="${escapeHtml(row)}">${escapeHtml(row)}</th>`;
+                for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
+                    const column = columns[columnIndex];
+                    if (isLocked(state.active, row, column)) {
+                        html += '<td><span class="locked-cell" title="Normal clone is implicitly diploid">1</span></td>';
+                        continue;
+                    }
+                    const value = state.values[state.active].get(key(row, column)) || '';
+                    const inputMode = state.active === 'U' ? 'decimal' : 'numeric';
+                    html += '<td>';
+                    html += `<input class="matrix-input" type="text" inputmode="${inputMode}" `;
+                    html += `data-matrix="${state.active}" data-row="${escapeHtml(row)}" `;
+                    html += `data-column="${escapeHtml(column)}" data-grid-row="${rowIndex}" `;
+                    html += `data-grid-column="${columnIndex}" value="${escapeHtml(value)}" `;
+                    html += `aria-label="${state.active} ${escapeHtml(row)} ${escapeHtml(column)}"></td>`;
+                }
+                html += '</tr>';
+            }
+            elements.grid.innerHTML = `${html}</tbody></table>`;
+            refreshStatus();
+        }
+
+        function pruneCloneEntries() {
+            const allowed = new Set(cloneLabels());
+            for (const matrix of ['A', 'B']) {
+                for (const entryKey of state.values[matrix].keys()) {
+                    if (!allowed.has(unkey(entryKey)[1])) { state.values[matrix].delete(entryKey); }
+                }
+            }
+            for (const entryKey of state.values.U.keys()) {
+                if (!allowed.has(unkey(entryKey)[0])) { state.values.U.delete(entryKey); }
+            }
+        }
+
+        function canonicalTsv() {
+            const lines = [FORMAT_MARKER, `# clones ${state.clones}`, HEADER];
+            for (const matrix of ['A', 'B']) {
+                for (const cluster of state.clusters) {
+                    for (const clone of cloneLabels().slice(1)) {
+                        const value = state.values[matrix].get(key(cluster, clone));
+                        if (value !== undefined) { lines.push(`${matrix}\t${cluster}\t${clone}\t${Number(value)}`); }
+                    }
+                }
+            }
+            for (const clone of cloneLabels()) {
+                for (const sample of state.samples) {
+                    const value = state.values.U.get(key(clone, sample));
+                    if (value !== undefined) { lines.push(`U\t${clone}\t${sample}\t${Number(value)}`); }
+                }
+            }
+            return `${lines.join('\n')}\n`;
+        }
+
+        elements.segFile.addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) { return; }
+            try {
+                const parsed = parseSeg(await file.text());
+                state.clusters = parsed.clusters;
+                state.samples = parsed.samples;
+                state.segName = file.name;
+                state.values = { A: new Map(), B: new Map(), U: new Map() };
+                elements.segName.textContent = file.name;
+                elements.segShape.textContent = `${state.clusters.length} clusters x ${state.samples.length} samples`;
+                renderGrid();
+                refreshStatus(`Loaded ${file.name}.`);
+            } catch (error) { setStatus(error.message, 'error'); }
+            finally { event.target.value = ''; }
+        });
+
+        elements.constraintsFile.addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) { return; }
+            if (!state.clusters.length) {
+                setStatus('Load the matching SEG file before importing constraints.', 'error');
+                event.target.value = '';
+                return;
+            }
+            try {
+                const parsed = parseConstraintFile(await file.text());
+                state.clones = parsed.clones;
+                state.values = parsed.values;
+                elements.cloneCount.value = state.clones;
+                renderGrid();
+                refreshStatus(`Imported ${file.name}.`);
+            } catch (error) { setStatus(error.message, 'error'); }
+            finally { event.target.value = ''; }
+        });
+
+        elements.cloneCount.addEventListener('change', () => {
+            const next = Number(elements.cloneCount.value);
+            if (Number.isInteger(next) && next >= 2 && next <= 50) {
+                state.clones = next;
+                pruneCloneEntries();
+                renderGrid();
+            } else { refreshStatus(); }
+        });
+        elements.maxCopyNumber.addEventListener('input', () => refreshStatus());
+        elements.minProportion.addEventListener('input', () => refreshStatus());
+        elements.filter.addEventListener('input', () => { state.filter = elements.filter.value; renderGrid(); });
+        elements.tabs.forEach((tab) => {
+            tab.addEventListener('click', () => {
+                state.active = tab.dataset.matrix;
+                elements.tabs.forEach((candidate) => candidate.setAttribute('aria-selected', String(candidate === tab)));
+                renderGrid();
+            });
+        });
+
+        elements.grid.addEventListener('input', (event) => {
+            const input = event.target.closest('.matrix-input');
+            if (!input) { return; }
+            const value = input.value.trim();
+            const entryKey = key(input.dataset.row, input.dataset.column);
+            if (value) { state.values[input.dataset.matrix].set(entryKey, value); }
+            else { state.values[input.dataset.matrix].delete(entryKey); }
+            refreshStatus();
+        });
+        elements.grid.addEventListener('keydown', (event) => {
+            const input = event.target.closest('.matrix-input');
+            if (!input || event.key !== 'Enter') { return; }
+            event.preventDefault();
+            const row = Number(input.dataset.gridRow) + (event.shiftKey ? -1 : 1);
+            const selector = `.matrix-input[data-grid-row="${row}"][data-grid-column="${input.dataset.gridColumn}"]`;
+            const next = elements.grid.querySelector(selector);
+            if (next) { next.focus(); next.select(); }
+        });
+        elements.grid.addEventListener('paste', (event) => {
+            const input = event.target.closest('.matrix-input');
+            if (!input) { return; }
+            const text = event.clipboardData.getData('text/plain');
+            if (!text.includes('\t') && !text.includes('\n')) { return; }
+            event.preventDefault();
+            const pastedRows = text.replace(/\r/g, '').trimEnd().split('\n').map((row) => row.split('\t'));
+            const rows = visibleRows(state.active);
+            const columns = matrixColumns(state.active);
+            const startRow = Number(input.dataset.gridRow);
+            const startColumn = Number(input.dataset.gridColumn);
+            for (let rowOffset = 0; rowOffset < pastedRows.length; rowOffset += 1) {
+                for (let columnOffset = 0; columnOffset < pastedRows[rowOffset].length; columnOffset += 1) {
+                    const row = rows[startRow + rowOffset];
+                    const column = columns[startColumn + columnOffset];
+                    if (row === undefined || column === undefined || isLocked(state.active, row, column)) { continue; }
+                    const value = pastedRows[rowOffset][columnOffset].trim();
+                    const entryKey = key(row, column);
+                    if (value) { state.values[state.active].set(entryKey, value); }
+                    else { state.values[state.active].delete(entryKey); }
+                }
+            }
+            renderGrid();
+        });
+
+        elements.clearMatrix.addEventListener('click', () => { state.values[state.active].clear(); renderGrid(); });
+        elements.clearAll.addEventListener('click', () => {
+            state.values = { A: new Map(), B: new Map(), U: new Map() };
+            renderGrid();
+        });
+        elements.download.addEventListener('click', () => {
+            const errors = validateAll();
+            if (errors.length || !fixedCount()) { refreshStatus(); return; }
+            const blob = new Blob([canonicalTsv()], { type: 'text/tab-separated-values;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const baseName = state.segName.replace(/\.(seg|tsv|txt)$/i, '') || 'hatchet';
+            link.href = url;
+            link.download = `${baseName}.fixed-matrix.tsv`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+            refreshStatus(`Downloaded ${link.download}.`);
+        });
+    </script>
+</body>
+
+</html>

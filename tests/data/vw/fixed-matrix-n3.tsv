@@ -1,0 +1,8 @@
+# HATCHET_FIXED_ENTRIES 1
+# clones 3
+matrix	row	column	value
+A	2	clone1	1
+B	2	clone1	0
+U	normal	Tumor1	0.4
+U	clone1	Tumor1	0.6
+U	clone2	Tumor1	0

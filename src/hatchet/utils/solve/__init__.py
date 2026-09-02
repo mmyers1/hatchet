@@ -6,6 +6,7 @@ from collections import OrderedDict
 
 from hatchet.utils.solve.ilp_subset import ILPSubset, ILPSubsetSplit
 from hatchet.utils.solve.cd import CoordinateDescent, CoordinateDescentSplit
+from hatchet.utils.fixed_matrix import resolve_fixed_matrix, validate_fixed_matrix, verify_fixed_matrix_solution
 from hatchet.utils.solve.utils import parse_clonal, scale_rdr
 from hatchet import config
 import hatchet.utils.Supporting as sp
@@ -18,6 +19,13 @@ def solver_available(solver=None):
     elif solver == 'gurobipy':
         return pe.SolverFactory('gurobi', solver_io='python').available(exception_flag=False)
     return pe.SolverFactory(solver).available(exception_flag=False)
+
+
+def _verified_solution(result, fixed_matrix):
+    if result is not None and fixed_matrix is not None:
+        _, cA, cB, u, _, _ = result
+        verify_fixed_matrix_solution(fixed_matrix, cA, cB, u)
+    return result
 
 
 def solve(
@@ -39,6 +47,7 @@ def solve(
     timelimit=None,
     binwise=False,
     purities=None,
+    fixed_matrix=None,
 ):
 
     assert solve_mode in ('ilp', 'cd', 'both'), 'Unrecognized solve_mode'
@@ -90,6 +99,24 @@ def solve(
     f_b = rdr * baf
     f_a = rdr - f_b
 
+    resolved_fixed_matrix = None
+    if fixed_matrix is not None:
+        if fixed_matrix.clones != n:
+            raise ValueError(
+                f'Fixed-matrix file declares {fixed_matrix.clones} clones, but the solver was configured for {n}'
+            )
+        resolved_fixed_matrix = resolve_fixed_matrix(fixed_matrix, f_a.index, f_a.columns)
+        validate_fixed_matrix(
+            resolved_fixed_matrix,
+            cn_max=cn_max,
+            mu=mu,
+            copy_numbers=copy_numbers,
+            purities=purities,
+            ampdel=ampdel,
+            cnstates=d,
+            weights=weights,
+        )
+
     if not binwise:
         if solve_mode == 'ilp':
             ilp = ILPSubset(
@@ -103,9 +130,13 @@ def solve(
                 f_b=f_b,
                 w=weights,
                 purities=purities,
+                fixed_matrix=resolved_fixed_matrix,
             )
             ilp.create_model(pprint=True)
-            return ilp.run(solver_type=solver, timelimit=timelimit)
+            return _verified_solution(
+                ilp.run(solver_type=solver, timelimit=timelimit),
+                resolved_fixed_matrix,
+            )
         elif solve_mode == 'cd':
             cd = CoordinateDescent(
                 f_a=f_a,
@@ -118,14 +149,18 @@ def solve(
                 ampdel=ampdel,
                 cn=copy_numbers,
                 purities=purities,
+                fixed_matrix=resolved_fixed_matrix,
             )
-            return cd.run(
-                solver_type=solver,
-                max_iters=max_iters,
-                n_seed=n_seed,
-                j=n_worker,
-                random_seed=random_seed,
-                timelimit=timelimit,
+            return _verified_solution(
+                cd.run(
+                    solver_type=solver,
+                    max_iters=max_iters,
+                    n_seed=n_seed,
+                    j=n_worker,
+                    random_seed=random_seed,
+                    timelimit=timelimit,
+                ),
+                resolved_fixed_matrix,
             )
         else:
             cd = CoordinateDescent(
@@ -139,8 +174,9 @@ def solve(
                 ampdel=ampdel,
                 cn=copy_numbers,
                 purities=purities,
+                fixed_matrix=resolved_fixed_matrix,
             )
-            _, cA, cB, _, _, _ = cd.run(
+            cd_result = cd.run(
                 solver_type=solver,
                 max_iters=max_iters,
                 n_seed=n_seed,
@@ -148,6 +184,8 @@ def solve(
                 random_seed=random_seed,
                 timelimit=timelimit,
             )
+            _verified_solution(cd_result, resolved_fixed_matrix)
+            _, cA, cB, _, _, _ = cd_result
 
             ilp = ILPSubset(
                 n,
@@ -160,10 +198,14 @@ def solve(
                 f_b=f_b,
                 w=weights,
                 purities=purities,
+                fixed_matrix=resolved_fixed_matrix,
             )
             ilp.create_model()
             ilp.hot_start(cA, cB)
-            return ilp.run(solver_type=solver, timelimit=timelimit)
+            return _verified_solution(
+                ilp.run(solver_type=solver, timelimit=timelimit),
+                resolved_fixed_matrix,
+            )
 
     else:
         bins = OrderedDict()  # cluster_id => RDR for cluster
@@ -222,9 +264,13 @@ def solve(
                 binsB=binsB,
                 lengths=bins_length,
                 purities=purities,
+                fixed_matrix=resolved_fixed_matrix,
             )
             ilp.create_model(pprint=True)
-            return ilp.run(solver_type=solver, timelimit=timelimit)
+            return _verified_solution(
+                ilp.run(solver_type=solver, timelimit=timelimit),
+                resolved_fixed_matrix,
+            )
         elif solve_mode == 'cd':
             cd = CoordinateDescentSplit(
                 f_a=f_a,
@@ -238,14 +284,19 @@ def solve(
                 binsA=binsA,
                 binsB=binsB,
                 lengths=bins_length,
+                purities=purities,
+                fixed_matrix=resolved_fixed_matrix,
             )
-            return cd.run(
-                solver_type=solver,
-                max_iters=max_iters,
-                n_seed=n_seed,
-                j=n_worker,
-                random_seed=random_seed,
-                timelimit=timelimit,
+            return _verified_solution(
+                cd.run(
+                    solver_type=solver,
+                    max_iters=max_iters,
+                    n_seed=n_seed,
+                    j=n_worker,
+                    random_seed=random_seed,
+                    timelimit=timelimit,
+                ),
+                resolved_fixed_matrix,
             )
         else:
             cd = CoordinateDescentSplit(
@@ -260,8 +311,10 @@ def solve(
                 binsA=binsA,
                 binsB=binsB,
                 lengths=bins_length,
+                purities=purities,
+                fixed_matrix=resolved_fixed_matrix,
             )
-            _, cA, cB, _, _, _ = cd.run(
+            cd_result = cd.run(
                 solver_type=solver,
                 max_iters=max_iters,
                 n_seed=n_seed,
@@ -269,6 +322,8 @@ def solve(
                 random_seed=random_seed,
                 timelimit=timelimit,
             )
+            _verified_solution(cd_result, resolved_fixed_matrix)
+            _, cA, cB, _, _, _ = cd_result
 
             ilp = ILPSubsetSplit(
                 n,
@@ -279,11 +334,15 @@ def solve(
                 copy_numbers=copy_numbers,
                 f_a=f_a,
                 f_b=f_b,
-                cn=copy_numbers,
                 binsA=binsA,
                 binsB=binsB,
                 lengths=bins_length,
+                purities=purities,
+                fixed_matrix=resolved_fixed_matrix,
             )
             ilp.create_model()
             ilp.hot_start(cA, cB)
-            return ilp.run(solver_type=solver, timelimit=timelimit)
+            return _verified_solution(
+                ilp.run(solver_type=solver, timelimit=timelimit),
+                resolved_fixed_matrix,
+            )

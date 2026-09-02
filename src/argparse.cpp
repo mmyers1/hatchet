@@ -7,6 +7,7 @@ ArgParse::ArgParse(int argc, char** argv)
     , _input()
     , _inputSEG()
     , _inputBBC()
+    , _F()
     , _cn()
     , _scalingcn()
     , _h(false)
@@ -47,6 +48,7 @@ ArgParse::ArgParse(int argc, char** argv)
     _args.insert("-o");
     _args.insert("-t");
     _args.insert("-f");
+    _args.insert("-F");
 
     _required.insert(std::make_pair("input", false));
     _required.insert(std::make_pair("-n", false));
@@ -67,6 +69,7 @@ ArgParse::ArgParse(int argc, char** argv)
     _optional["-o"] = false;
     _optional["-t"] = false;
     _optional["-f"] = false;
+    _optional["-F"] = false;
 
     parse();
 
@@ -86,7 +89,7 @@ std::string ArgParse::help()
 {
     std::stringstream res;
     res << "\033[96m" << "\033[1m" << "USAGE:" << "\033[0m" << "\033[96m" << std::endl;
-    res << "\t./solve input -n INT [-e INT] [-j INT] [-m INT] [-s INT] [-c COPYNUMBERS] [-v] [-h]" << std::endl;
+    res << "\t./solve input -n INT [-e INT] [-j INT] [-m INT] [-s INT] [-c COPYNUMBERS] [-F FIXED-MATRIX] [-v] [-h]" << std::endl;
     res << "\033[96m" << "\033[1m" << "WHERE:" << "\033[0m" << "\033[96m" << std::endl;
     res << "\tinput PREFIX-INPUT\n\t\tCommon prefix for the input files .seg and .bbc (required)" << std::endl;
     res << "\t-n INT-NUMCLONES\n\t\tNumber of tumor clones to infer (required)" << std::endl;
@@ -105,6 +108,7 @@ std::string ArgParse::help()
     res << "\t-o PREFIX-OUTPUT\n\t\tPrefix of the output files that will be generated (default: current directory with the basename of the input prefix)"<< std::endl;
     res << "\t-t DIPLOID\n\t\tMaximum BAF shift for diploid cluster used to automatically infer the diploid cluster (default: 0.1)" << std::endl;
     res << "\t-f FORCE-AMPDEL\n\t\tForce every mutated segment (not 2 in diploid tumors and not 4 in tetraploid tumors) to be either amplified or deleted in all the clones (default: not applied)" << "\033[0m" << std::endl;
+    res << "\t-F FIXED-MATRIX\n\t\tPath to a TSV file containing fixed A, B, and U matrix entries (default: none)" << "\033[0m" << std::endl;
     return res.str();
 }
 
@@ -138,6 +142,7 @@ std::string ArgParse::toString()
     res << "\tDiploid threshold:  " << _t << std::endl;
     res << "\tBase:  " << _base << std::endl;
     res << "\tForce amp-del:  " << _f;
+    res << "\n\tFixed matrix entries:  " << (_F.empty() ? "none" : _F);
     return res.str();
 }
 
@@ -369,6 +374,18 @@ void ArgParse::parseOptional(const std::string &arg, const std::string &value)
             (*_optional.find("-f")).second = true;
             _f = true;
         }
+    } else if (arg == "-F") {
+        if((*_optional.find("-F")).second)
+        {
+            throw "Multiple -F arguments found!";
+        }
+        std::ifstream fixedMatrix(value.c_str());
+        if(!fixedMatrix.good())
+        {
+            throw "The specified fixed-matrix file \"" + value + "\" does not exist or cannot be opened!";
+        }
+        (*_optional.find("-F")).second = true;
+        _F = value;
     } else if (arg == "-M") {
         if((*_optional.find("-M")).second)
         {

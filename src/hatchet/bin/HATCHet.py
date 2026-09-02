@@ -9,6 +9,7 @@ from collections import Counter
 import hatchet
 from hatchet import config, __version__
 from hatchet.utils.Supporting import ensure, log, error
+from hatchet.utils.fixed_matrix import parse_fixed_matrix, resolve_fixed_matrix
 from hatchet.utils.solve import solve
 from hatchet.utils.solve.utils import segmentation
 
@@ -51,6 +52,13 @@ def parsing_arguments(args=None):
             'given in the form LOWER,UPPER where LOWER and UPPER are two integer defining the interval '
             '(default: 2,8)'
         ),
+    )
+    parser.add_argument(
+        '--fixed-matrix',
+        type=str,
+        required=False,
+        default=config.compute_cn.fixedmatrix,
+        help='Path to a TSV file containing fixed A, B, and U matrix entries (default: none)',
     )
     parser.add_argument(
         '-f',
@@ -316,6 +324,8 @@ def parsing_arguments(args=None):
     bbc = args.input + '.bbc'
     if not os.path.isfile(bbc):
         raise ValueError(error('BBC file {} not found!'.format(bbc)))
+    if args.fixed_matrix is not None and not os.path.isfile(args.fixed_matrix):
+        raise ValueError(error('Fixed-matrix file {} not found!'.format(args.fixed_matrix)))
 
     if args.clones.isdigit():
         ln = int(args.clones)
@@ -329,6 +339,8 @@ def parsing_arguments(args=None):
             un = int(parsed[1])
     if ln < 2:
         raise ValueError(error('The lower bound in the number of clones must be greater or equal than 2!'))
+    if args.fixed_matrix is not None and ln != un:
+        raise ValueError(error('A fixed-matrix file requires one exact number of clones, not an interval!'))
 
     if args.cnstates is not None and args.cnstates <= 0:
         raise ValueError(
@@ -398,6 +410,7 @@ def parsing_arguments(args=None):
         'bbc': bbc,
         'ln': ln,
         'un': un,
+        'fixedmatrix': args.fixed_matrix,
         'clonal': args.clonal,
         'ampdel': not args.noampdel,
         'd': args.cnstates,
@@ -436,6 +449,25 @@ def logArgs(args, width):
     sys.stderr.write(log(text))
 
 
+def load_fixed_matrix_entries(args, cluster_ids, sample_ids):
+    if args['fixedmatrix'] is None:
+        return None
+
+    fixed_matrix = parse_fixed_matrix(args['fixedmatrix'])
+    if fixed_matrix.clones != args['ln']:
+        raise ValueError(
+            error(
+                'Fixed-matrix file declares {} clones, but compute-cn was configured for {}!'.format(
+                    fixed_matrix.clones,
+                    args['ln'],
+                )
+            )
+        )
+
+    resolve_fixed_matrix(fixed_matrix, cluster_ids, sample_ids)
+    return fixed_matrix
+
+
 def main(args=None):
     sys.stderr.write(log('# Checking and parsing input arguments\n'))
     args = parsing_arguments(args)
@@ -455,6 +487,10 @@ def main(args=None):
         assert len(args['purities']) == len(samples), error(
             'The number of purities given in space-separated list does not match the number of samples!'
         )
+
+    if args['fixedmatrix'] is not None:
+        sys.stderr.write(log('# Reading and validating fixed matrix entries\n'))
+    args['fixed'] = load_fixed_matrix_entries(args, seg.keys(), samples)
 
     sys.stderr.write(log('# Computing the cluster sizes\n'))
     size = computeSizes(seg=seg, bbc=bbc, samples=samples)
@@ -980,6 +1016,8 @@ def makeBaseCMD(args, e):
         basecmd += ' -r {}'.format(args['r'])
     if args['M'] is not None:
         basecmd += ' -M {}'.format(args['M'])
+    if args['fixedmatrix'] is not None:
+        basecmd += ' -F {}'.format(shlex.quote(args['fixedmatrix']))
     basecmd += ' -v 2'
     # if args['td'] is not None:
     #    basecmd += ' -t {}'.format(args['td'])
@@ -1252,6 +1290,7 @@ def execute_python(solver, args, n, outprefix):
         timelimit=args['s'],
         binwise=args['binwise'],
         purities=args['purities'],
+        fixed_matrix=args['fixed'],
     )
 
     segmentation(
@@ -1301,6 +1340,8 @@ def execute(args, basecmd, n, outprefix):
                 break
 
     stdout, stderr = process.communicate()
+    if stderr:
+        buffer.extend(stderr.splitlines())
     exitcode = process.returncode
     if exitcode == 0:
         obj = -1

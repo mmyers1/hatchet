@@ -8,7 +8,7 @@ from hatchet.utils.solve.utils import Random
 
 
 class ILPSubset:
-    def __init__(self, n, cn_max, d, mu, ampdel, copy_numbers, f_a, f_b, w, purities):
+    def __init__(self, n, cn_max, d, mu, ampdel, copy_numbers, f_a, f_b, w, purities, fixed_matrix=None):
 
         # Each ILPSubset maintains its own data, so make a deep-copy of passed-in DataFrames
         f_a, f_b = f_a.copy(deep=True), f_b.copy(deep=True)
@@ -31,6 +31,7 @@ class ILPSubset:
         self.copy_numbers = copy_numbers
         self.w = w
         self.purities = purities
+        self.fixed_matrix = fixed_matrix
 
         self.tol = 0.001
 
@@ -61,6 +62,7 @@ class ILPSubset:
             f_b=self.f_b,
             w=self.w,
             purities=self.purities,
+            fixed_matrix=self.fixed_matrix,
         )
 
     def __str__(self):
@@ -414,6 +416,8 @@ class ILPSubset:
             self.build_symmetry_breaking(model)
             self.fix_given_cn(model)
 
+        self.apply_fixed_matrix_constraints(model)
+
         if mode_t == 'FULL':
             self.hot_start()
 
@@ -436,8 +440,27 @@ class ILPSubset:
             for _m in range(self.m):
                 _symCoeff = self.symmCoeff(_m)
                 _sum1 += self.cA[_m][i] * _symCoeff + self.cB[_m][i] * _symCoeff
-                _sum2 += self.cA[_m][i] * _symCoeff + self.cB[_m][i] * _symCoeff
+                _sum2 += self.cA[_m][i + 1] * _symCoeff + self.cB[_m][i + 1] * _symCoeff
             model.constraints.add(_sum1 <= _sum2)
+
+    def apply_fixed_matrix_constraints(self, model):
+        if self.fixed_matrix is None:
+            return
+
+        model.fixed_matrix_constraints = pe.ConstraintList()
+        for entry in self.fixed_matrix.entries:
+            if entry.matrix == 'A' and self.mode in ('FULL', 'CARCH'):
+                model.fixed_matrix_constraints.add(self.cA[entry.row_index][entry.column_index] == entry.value)
+            elif entry.matrix == 'B' and self.mode in ('FULL', 'CARCH'):
+                model.fixed_matrix_constraints.add(self.cB[entry.row_index][entry.column_index] == entry.value)
+            elif entry.matrix == 'U' and self.mode in ('FULL', 'UARCH'):
+                model.fixed_matrix_constraints.add(self.u[entry.row_index][entry.column_index] == entry.value)
+
+    def overlay_fixed_matrix(self, matrix, values):
+        if self.fixed_matrix is None:
+            return
+        for entry in self.fixed_matrix.entries_for(matrix):
+            values[entry.row_index][entry.column_index] = entry.value
 
     def fix_given_cn(self, model):
         for _m in range(self.m):
@@ -512,6 +535,8 @@ class ILPSubset:
                         assert hcA[_m][_n] >= 0
                         assert hcB[_m][_n] >= 0
 
+                self.overlay_fixed_matrix('A', hcA)
+                self.overlay_fixed_matrix('B', hcB)
         return hcA, hcB
 
     def hot_start(self, f_a=None, f_b=None):
@@ -528,8 +553,11 @@ class ILPSubset:
 
         if f_a is None and f_b is None:
             f_a, f_b = self.first_hot_start()
-        rank = get_rank(f_a, f_b)
-        rank_indices = np.argsort(rank)
+        if self.fixed_matrix is None:
+            rank = get_rank(f_a, f_b)
+            rank_indices = np.argsort(rank)
+        else:
+            rank_indices = np.arange(self.n)
 
         for _m in range(self.m):
             for _n in range(0, self.n):
@@ -538,13 +566,32 @@ class ILPSubset:
         self.warmstart = True
 
     def fix_u(self, u):
-        self._fixed_u[:] = u
+        if len(u) != self.n or any(len(row) != self.k for row in u):
+            raise ValueError(f'Fixed U must have shape ({self.n}, {self.k})')
+        self._fixed_u = [list(row) for row in u]
+        self.overlay_fixed_matrix('U', self._fixed_u)
+        for sample_index in range(self.k):
+            sample_sum = sum(self._fixed_u[clone_index][sample_index] for clone_index in range(self.n))
+            if abs(sample_sum - 1) > self.tol:
+                raise ValueError(f'Fixed U column {sample_index} sums to {sample_sum}, not 1')
+            for clone_index in range(1, self.n):
+                value = self._fixed_u[clone_index][sample_index]
+                if self.tol < value < self.mu - self.tol:
+                    raise ValueError(
+                        f'Fixed U[{clone_index}, {sample_index}]={value} is between 0 and minprop {self.mu}'
+                    )
         self.mode = 'CARCH'
         # TODO: sanity checks in fixU
 
     def fix_c(self, cA, cB):
-        self._fixed_cA = cA
-        self._fixed_cB = cB
+        if len(cA) != self.m or any(len(row) != self.n for row in cA):
+            raise ValueError(f'Fixed A must have shape ({self.m}, {self.n})')
+        if len(cB) != self.m or any(len(row) != self.n for row in cB):
+            raise ValueError(f'Fixed B must have shape ({self.m}, {self.n})')
+        self._fixed_cA = [list(row) for row in cA]
+        self._fixed_cB = [list(row) for row in cB]
+        self.overlay_fixed_matrix('A', self._fixed_cA)
+        self.overlay_fixed_matrix('B', self._fixed_cB)
         self.mode = 'UARCH'
         # TODO: sanity checks in fixC
 
@@ -589,7 +636,35 @@ class ILPSubset:
                 n_parts = min(max(_n0, _n1), size_bubbles)  # no. of clones with non-zero proportion in the mix
                 v = _build_partition_vector(self.n, n_parts, size_bubbles, mu=self.mu)
                 U[:, _k] = v
+        self.condition_fixed_u(U)
         return U
+
+    def condition_fixed_u(self, u):
+        if self.fixed_matrix is None:
+            return
+
+        for sample_index in range(self.k):
+            entries = [entry for entry in self.fixed_matrix.entries_for('U') if entry.column_index == sample_index]
+            if not entries:
+                continue
+
+            fixed_clones = {entry.row_index for entry in entries}
+            fixed_sum = sum(entry.value for entry in entries)
+            free_clones = [clone_index for clone_index in range(self.n) if clone_index not in fixed_clones]
+            for clone_index in free_clones:
+                u[clone_index][sample_index] = 0
+            for entry in entries:
+                u[entry.row_index][sample_index] = entry.value
+
+            residual = 1 - fixed_sum
+            if residual > self.tol:
+                eligible_clones = free_clones
+                if residual < self.mu - self.tol:
+                    eligible_clones = [clone_index for clone_index in free_clones if clone_index == 0]
+                if not eligible_clones:
+                    raise ValueError(f'Cannot allocate remaining U proportion {residual} in sample {sample_index}')
+                selected_clone = np.random.choice(eligible_clones)
+                u[selected_clone][sample_index] = residual
 
     def run(self, solver_type='gurobi', timelimit=None, write_path=None):
         if solver_type == 'gurobipy':
@@ -649,6 +724,8 @@ class ILPSubsetSplit(ILPSubset):
         binsA,
         binsB,
         lengths,
+        purities=None,
+        fixed_matrix=None,
     ):
 
         # Each ILPSubset maintains its own data, so make a deep-copy of passed-in DataFrames
@@ -673,6 +750,8 @@ class ILPSubsetSplit(ILPSubset):
         self.mu = mu
         self.ampdel = ampdel
         self.copy_numbers = copy_numbers
+        self.purities = purities
+        self.fixed_matrix = fixed_matrix
 
         self.tol = 0.001
 
@@ -704,6 +783,8 @@ class ILPSubsetSplit(ILPSubset):
             binsA=self.binsA,
             binsB=self.binsB,
             lengths=self.lengths,
+            purities=self.purities,
+            fixed_matrix=self.fixed_matrix,
         )
 
     def create_model(self, pprint=False):
@@ -717,6 +798,7 @@ class ILPSubsetSplit(ILPSubset):
         d = self.d
         _M = self.M
         _base = self.base
+        purities = self.purities
 
         model = pe.ConcreteModel()
 
@@ -904,6 +986,10 @@ class ILPSubsetSplit(ILPSubset):
                     model.constraints.add(self.cB[_m][_n] == sum_b)
                     model.constraints.add(self.cA[_m][_n] + self.cB[_m][_n] <= ub)
 
+        if mode_t in ('FULL', 'UARCH') and purities:
+            for sample_index, purity in enumerate(purities):
+                model.constraints.add(self.u[0][sample_index] == 1 - purity)
+
         if mode_t == 'CARCH':
             # TODO: These loops can be collapsed once validation against C++ is complete
             for _m in range(m):
@@ -1001,6 +1087,8 @@ class ILPSubsetSplit(ILPSubset):
         if mode_t in ('FULL', 'CARCH'):
             self.build_symmetry_breaking(model)
             self.fix_given_cn(model)
+
+        self.apply_fixed_matrix_constraints(model)
 
         if mode_t == 'FULL':
             self.hot_start()

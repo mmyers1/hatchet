@@ -109,6 +109,7 @@ hatchet solves a constrained and distance-based variant of the factorization tha
 | `-u`, `--minprop` | Minimum clone proportion | In every sample, each clone either is non present (clone proportion equal to 0.0) or has a clone proportion higher than this threshold | 0.03 |
 | `-f`, `--noampdel` | Activate clone evolutionary contraints | User can decide whether to enable or not constrained about the evolution of tumor clones. These constrained force each allele to be either amplified or deleted across all tumor clones | Activated |
 | `-d`, `--cnstates` | Maximum number of distinct copy-number states per cluster | When enabled, the maximum number of distinct copy-number states per cluster is fixed. This option is deprecated | Not used |
+| `--fixed-matrix` | Fixed factorization entries | Path to a sparse TSV file containing entries of the copy-number matrices `A` and `B` or mixture matrix `U` that must remain fixed during solving | None |
 
 HATCHet implements two methods to solve the constrained and distance-based simultaneous factorization: (1) a integer-linear programming (ILP) and (2) a coordinate-descent method (CD).
 These methods can be combined in 3 different modes:
@@ -138,5 +139,120 @@ This steps have two main parameters to control the model-selection criterion:
 |------|-------------|-------|---------|
 | `-l`, `--limitinc` | Sensitivity level | The sensitivity level is used to control the confidence in evaluating the presence of tumor clones characterized by small CNAs. By decreasing the value of the sensitivity, HATCHet is more sensible to the presence of small CNAs and small clusters or with small shifts in RDR/BAF are more likely considered as the signal of an additional tumor clone. The possible values of this parameter are between 1.0 and 0.0 and specifically corresponds to an upper bound for the left relative improvement of the objective function. | None, reasonable values to use can be 0.6, 0.5, 0.4, 0.3, 0.2, ... according to the values of the objective function. |
 | `-g`, `--ghostprop` | Confidence in the presence of a single tumor clone | This value expresses the confidence of HATCHet when evaluating the presence of a single tumor clone. The higher the value the more likely the presence of a single clone is considered | 0.2 |
+
+## [EXPERT FEATURE] Fixing entries of A, B, and U
+
+Experts may provide hard constraints for selected entries of the simultaneous factorization while leaving all other entries free. This can be useful when copy-number states are known for particular clones or when external evidence supports mixture proportions for a subset of samples. **WARNING: This feature is not recommended for users who lack considerable experience refining HATCHet2 solutions, as forcing specific values can easily produce poorly supported results.**
+
+For `m` segmental clusters, `n` total clones, and `k` bulk samples, HATCHet uses:
+
+- `A`, an `m` by `n` matrix of integer A-allele copy numbers;
+- `B`, an `m` by `n` matrix of integer B-allele copy numbers; and
+- `U`, an `n` by `k` matrix of clone proportions.
+
+The first clone is the normal clone. It is addressed as `normal`; tumor clones are addressed as `clone1`, `clone2`, and so on. The normal copy numbers are always `A = 1` and `B = 1`. Every sample column of `U` sums to 1.
+
+The observed allele-specific fractional copy numbers are approximated by the products `A U` and `B U`. Fixed entries are hard equalities in this factorization. They do not require an exact fit to the observed fractional copy numbers because the HATCHet objective permits residual error.
+
+### Creating a file in the offline editor
+
+HATCHet includes a self-contained graphical editor that runs locally in a web browser and makes no network requests:
+
+```bash
+hatchet fixed-matrix-editor
+```
+
+On a remote or headless system, print the packaged HTML path without trying to open a browser:
+
+```bash
+hatchet fixed-matrix-editor --no-open
+```
+
+In the editor:
+
+1. Open the `${PRE}.seg` file used by `compute-cn`.
+2. Set the exact total number of clones, including the normal clone.
+3. Enter fixed cells in the A allele, B allele, or U mixture tabs. Blank cells remain free.
+4. Review the validation status and download the TSV file.
+
+The editor supports filtering, keyboard entry, rectangular spreadsheet paste, clearing one matrix or all matrices, and importing an existing fixed-entry TSV. Normal A/B cells are displayed as locked values of 1 and do not need to be written to the downloaded file.
+
+The editor's maximum-copy-number and minimum-proportion fields provide immediate checks while editing. The corresponding `compute-cn` options remain authoritative when the file is used for solving.
+
+### File format
+
+The auxiliary file is UTF-8, tab-separated, sparse, and versioned. A complete example for three total clones is:
+
+```text
+# HATCHET_FIXED_ENTRIES 1
+# clones 3
+matrix	row	column	value
+A	1	clone1	2
+B	1	clone1	1
+A	4	clone2	3
+B	4	clone2	1
+U	normal	Tumor1	0.35
+U	clone1	Tumor1	0.40
+```
+
+The first line must be the format marker shown above. The clone-count metadata must appear before the header and must equal the exact `compute-cn` clone count. `n` includes the normal clone, so `# clones 3` defines `normal`, `clone1`, and `clone2`.
+
+Each data row has four fields:
+
+| Field | A or B entry | U entry |
+|-------|--------------|---------|
+| `matrix` | `A` or `B` | `U` |
+| `row` | Exact cluster ID from the `#ID` column of the SEG file | `normal` or `cloneN` |
+| `column` | `normal` or `cloneN` | Exact sample name from the `SAMPLE` column of the SEG file |
+| `value` | Nonnegative integer copy number | Finite number in `[0, 1]` |
+
+Only listed entries are fixed. Data rows may appear in any order, blank lines and comment lines are allowed, and identifiers are matched exactly. Duplicate matrix coordinates are rejected rather than overwritten. A file must contain at least one data row.
+
+### Running compute-cn
+
+Specify the auxiliary file on the command line and use one exact total clone count:
+
+```bash
+hatchet compute-cn \
+	-i /path/to/bulk \
+	-n 3 \
+	--fixed-matrix /path/to/patient.fixed-matrix.tsv
+```
+
+The equivalent `.ini` interface is:
+
+```ini
+[compute_cn]
+clones = 3
+fixedmatrix = /path/to/patient.fixed-matrix.tsv
+```
+
+The command-line option overrides the `.ini` value. The setting can also be overridden through `HATCHET_COMPUTE_CN_FIXEDMATRIX` environment variable.
+
+Clone ranges such as `clones = 2,6` are rejected when a fixed-matrix file is present because `clone1`, `clone2`, and subsequent labels must have stable meanings. Output filenames and BBC/SEG columns are unchanged.
+
+### Interactions with other constraints
+
+HATCHet validates the auxiliary file before optimization and reports the source line for errors when possible. Important interactions include:
+
+- `--clonal`: a clonal copy-number assignment fixes that cluster in every tumor clone. A conflicting A or B entry is rejected.
+- `--purities`: in the Pyomo solver path, fixing purity sets `U[normal, sample] = 1 - purity`. A conflicting normal proportion is rejected.
+- `--minprop`: a fixed tumor proportion must be 0 or at least the configured minimum, within numerical tolerance.
+- `--diploidcmax` and `--tetraploidcmax`: fixed copy numbers and fully specified A+B totals must satisfy the active branch's bounds.
+- Amp/del constraints: when enabled, fixed values cannot force the same allele to be both amplified and deleted across tumor clones for one cluster.
+- `--cnstates`: fully specified states count toward the configured limit, although this option remains deprecated.
+- Large clusters: a fully fixed tumor state of `(0, 0)` is not allowed where the existing large-cluster constraint requires at least one copy.
+- Mixture sums: fixed U entries for a sample may sum to at most 1. If the entire column is fixed, it must sum to 1. Any remaining mass must be assignable under `--minprop`.
+
+When neither `--diploid` nor `--tetraploid` is specified, the same file is applied to both model-selection branches. A constraint that is incompatible with either branch causes an explicit error. Force a ploidy mode when the expert constraints are intended for only that branch.
+
+Tumor clone labels follow HATCHet's canonical weighted-copy-number order. For adjacent tumor clones, HATCHet enforces:
+
+```text
+sum_s (s + 1) (A[s, i] + B[s, i]) <= sum_s (s + 1) (A[s, i + 1] + B[s, i + 1])
+```
+
+Fully specified entries that violate this ordering are rejected when the conflict can be determined before solving. Partial entries may still produce a globally infeasible model; in that case the solver reports that no constrained solution is feasible.
+
 
 ## Additional parameters

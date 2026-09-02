@@ -17,6 +17,7 @@ commands = (
     'cluster-bins-gmm',
     'plot-cn-1d2d',
     'plot-bins-1d2d',
+    'fixed-matrix-editor',
 )
 
 

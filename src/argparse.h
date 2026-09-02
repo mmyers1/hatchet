@@ -30,6 +30,11 @@ public:
         return _inputBBC;
     }
 
+    const std::string& fixedMatrix() const
+    {
+        return _F;
+    }
+
     int n() const
     {
         return _n;
@@ -133,6 +138,8 @@ private:
     std::string _inputSEG;
     /// Input .seg file
     std::string _inputBBC;
+    /// Optional file of fixed A, B, and U entries
+    std::string _F;
     /// Clonal segments
     CNAssignCluster _cn;
     //

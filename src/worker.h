@@ -21,6 +21,7 @@ public:
            const int base,
            const bool ampdel,
            const CNMap& cn,
+           const FixedMatrix& fixedMatrix,
            const int iterConvergence,
            const int maxIter,
            const int timeLimit,
@@ -73,6 +74,8 @@ private:
     const bool _ampdel;
     ///
     const CNMap& _cn;
+    /// Sparse user-specified A, B, and U entries
+    const FixedMatrix& _fixedMatrix;
     /// Number of iterations for checking convergence
     const unsigned int _iterConvergence;
     /// Maximum number of iterations for each seed

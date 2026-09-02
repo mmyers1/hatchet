@@ -22,6 +22,8 @@ set( CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG" )
 
 add_executable ( solve
     src/solve.cpp
+    src/fixed_matrix.h
+    src/fixed_matrix.cpp
     src/ilp-min.h
     src/ilp-min.cpp
     src/gurobi-utils.h

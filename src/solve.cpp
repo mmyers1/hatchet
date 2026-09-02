@@ -3,6 +3,7 @@
 #include "argparse.h"
 #include "input_instance.h"
 #include "bbc_instance.h"
+#include "fixed_matrix.h"
 #include "ilp-min.h"
 #include "coordinate_descent.h"
 
@@ -51,6 +52,15 @@ int main(int argc, char** argv)
         int cmax = argparse.cmax() > 0 ? argparse.cmax() : maxCeil(F);
         log("Inferred maximum copy number:" + std::to_string(cmax), VERBOSITY_t::DEBUGGING, argparse.v());
 
+        FixedMatrix fixedMatrix;
+        if(!argparse.fixedMatrix().empty())
+        {
+            fixedMatrix = FixedMatrix::read(argparse.fixedMatrix(), argparse.n(),
+                                            instance.clusterToIdx(), instance.sampleToIdx());
+            fixedMatrix.validate(cmax, argparse.minprop(), argparse.base(), argparse.forceAMPDEL(),
+                                 argparse.d(), cn, instance.w());
+        }
+
         log("Compute allele-specific fractional copy numbers using BAF", VERBOSITY_t::ESSENTIAL, argparse.v());
         DoubleMatrix FA;
         DoubleMatrix FB;
@@ -67,13 +77,15 @@ int main(int argc, char** argv)
         {
             log("Starting coordinate descent algorithm on " + std::to_string(argparse.nrSeeds()) + " seeds", VERBOSITY_t::ESSENTIAL, argparse.v());
             CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.minprop(), argparse.base(),
-                                 argparse.forceAMPDEL(), cn, 2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1, argparse.s(), argparse.m(), argparse.v());
+                                 argparse.forceAMPDEL(), cn, fixedMatrix, 2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1,
+                                 argparse.s(), argparse.m(), argparse.v());
             cd.run();
+            fixedMatrix.verify(cd.getACN(), cd.getBCN(), cd.getU());
             log("Objective value from coordinate descent:\t" + std::to_string(cd.getObjValue()), VERBOSITY_t::ESSENTIAL, argparse.v());
 
             log("Starting exact ILP for improving solution found by coordinate descent", VERBOSITY_t::ESSENTIAL, argparse.v());
             IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.base(),
-                          argparse.forceAMPDEL(), cn, FA, FB, instance.w(), argparse.v());
+                          argparse.forceAMPDEL(), cn, FA, FB, instance.w(), fixedMatrix, argparse.v());
             ilp.init();
             ilp.hotStart(cd.getACN(), cd.getBCN());
             ilp.solve(argparse.s(), argparse.m(), argparse.j());
@@ -87,15 +99,17 @@ int main(int argc, char** argv)
             ACN = ilp.getACNs()[0];
             BCN = ilp.getBCNs()[0];
             U = ilp.getUs()[0];
+            fixedMatrix.verify(ACN, BCN, U);
 
         } else if (argparse.M() == SOLVE_t::ILP)
         {
             log("Starting exact ILP", VERBOSITY_t::ESSENTIAL, argparse.v());
             IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.base(),
-                          argparse.forceAMPDEL(), cn, FA, FB, instance.w(), argparse.v());
+                          argparse.forceAMPDEL(), cn, FA, FB, instance.w(), fixedMatrix, argparse.v());
             ilp.init();
             std::pair<IntMatrix, IntMatrix> hotstart;
             hotstart = IlpSubset::firstHotStart(FA, FB, instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.base(), argparse.forceAMPDEL(), cn);
+            fixedMatrix.applyCopyNumbers(hotstart.first, hotstart.second);
             ilp.hotStart(hotstart.first, hotstart.second);
             ilp.solve(argparse.s(), argparse.m(), argparse.j());
 
@@ -108,12 +122,14 @@ int main(int argc, char** argv)
             ACN = ilp.getACNs()[0];
             BCN = ilp.getBCNs()[0];
             U = ilp.getUs()[0];
+            fixedMatrix.verify(ACN, BCN, U);
 
         } else if (argparse.M() == SOLVE_t::CD)
         {
             log("Starting coordinate descent algorithm on " + std::to_string(argparse.nrSeeds()) + " seeds", VERBOSITY_t::ESSENTIAL, argparse.v());
             CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.minprop(), argparse.base(),
-                                 argparse.forceAMPDEL(), cn, 2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1, argparse.s(), argparse.m(), argparse.v());
+                                 argparse.forceAMPDEL(), cn, fixedMatrix, 2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1,
+                                 argparse.s(), argparse.m(), argparse.v());
             cd.run();
 
             log("Final objective:\t" + std::to_string(cd.getObjValue()), VERBOSITY_t::ESSENTIAL, argparse.v());
@@ -123,6 +139,7 @@ int main(int argc, char** argv)
             ACN = cd.getACN();
             BCN = cd.getBCN();
             U = cd.getU();
+            fixedMatrix.verify(ACN, BCN, U);
 
         } else {
             throw "Unknown solving mode!";
