@@ -22,6 +22,8 @@ public:
            const bool ampdel,
            const CNMap& cn,
            const FixedMatrix& fixedMatrix,
+           const SampleClonal& sampleClonal,
+           const DoubleArray& purities,
            const int iterConvergence,
            const int maxIter,
            const int timeLimit,
@@ -76,6 +78,10 @@ private:
     const CNMap& _cn;
     /// Sparse user-specified A, B, and U entries
     const FixedMatrix& _fixedMatrix;
+    /// Per-sample clonal states
+    const SampleClonal& _sampleClonal;
+    /// Per-sample purities
+    const DoubleArray& _purities;
     /// Number of iterations for checking convergence
     const unsigned int _iterConvergence;
     /// Maximum number of iterations for each seed

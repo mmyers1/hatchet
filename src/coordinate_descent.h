@@ -21,6 +21,8 @@ public:
                       const bool ampdel,
                       const CNMap& cn,
                       const FixedMatrix& fixedMatrix,
+                      const SampleClonal& sampleClonal,
+                      const DoubleArray& purities,
                       const unsigned int iterConvergence,
                       const unsigned int maxIter,
                       const int nrSeeds,
@@ -81,6 +83,10 @@ private:
     const CNMap& _cn;
     /// Sparse user-specified A, B, and U entries
     const FixedMatrix& _fixedMatrix;
+    /// Per-sample clonal states
+    const SampleClonal& _sampleClonal;
+    /// Per-sample purities
+    const DoubleArray& _purities;
     /// Number of iterations for checking convergence
     const unsigned int _iterConvergence;
     /// Maximum number of iterations for each seed
@@ -123,6 +129,8 @@ private:
 
     /// Construct random M
     DoubleMatrix buildRandomU();
+    /// Construct a sample-clonal-compatible random M
+    DoubleMatrix buildSampleClonalU();
     /// Construct random vector summing up to 1
     DoubleArray buildPartitionVector(const int num_parts);
     ///

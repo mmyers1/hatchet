@@ -8,7 +8,22 @@ from hatchet.utils.solve.utils import Random
 
 
 class ILPSubset:
-    def __init__(self, n, cn_max, d, mu, ampdel, copy_numbers, f_a, f_b, w, purities, fixed_matrix=None):
+    def __init__(
+        self,
+        n,
+        cn_max,
+        d,
+        mu,
+        ampdel,
+        copy_numbers,
+        f_a,
+        f_b,
+        w,
+        purities,
+        fixed_matrix=None,
+        base=None,
+        sample_clonal=None,
+    ):
 
         # Each ILPSubset maintains its own data, so make a deep-copy of passed-in DataFrames
         f_a, f_b = f_a.copy(deep=True), f_b.copy(deep=True)
@@ -32,6 +47,8 @@ class ILPSubset:
         self.w = w
         self.purities = purities
         self.fixed_matrix = fixed_matrix
+        self._base = base
+        self.sample_clonal = sample_clonal
 
         self.tol = 0.001
 
@@ -63,6 +80,8 @@ class ILPSubset:
             w=self.w,
             purities=self.purities,
             fixed_matrix=self.fixed_matrix,
+            base=self._base,
+            sample_clonal=self.sample_clonal,
         )
 
     def __str__(self):
@@ -88,7 +107,7 @@ class ILPSubset:
 
     @property
     def base(self):
-        return min(2, len(self.copy_numbers))
+        return self._base if self._base is not None else min(2, len(self.copy_numbers))
 
     @staticmethod
     def symmCoeff(i):
@@ -219,7 +238,7 @@ class ILPSubset:
                             )
 
         x = {}
-        if (mode_t in ('FULL', 'UARCH')) and (self.mu > 0):
+        if (mode_t in ('FULL', 'UARCH')) and (self.mu > 0 or self.sample_clonal is not None):
             for _n in range(n):
                 for _k in range(k):
                     x[(_n, _k)] = pe.Var(domain=pe.Binary)
@@ -317,7 +336,7 @@ class ILPSubset:
                     _sumA = 0
                     _sumB = 0
                     for _n in range(n):
-                        if self._fixed_u[_n][_k] >= self.mu - self.tol:
+                        if _n == 0 or self._fixed_u[_n][_k] > self.tol:
                             _sumA += self.cA[_m][_n] * self._fixed_u[_n][_k]
                             _sumB += self.cB[_m][_n] * self._fixed_u[_n][_k]
                     model.constraints.add(fA[(_m, _k)] == _sumA)
@@ -371,11 +390,14 @@ class ILPSubset:
                     _sum += self.u[_n][_k]
                 model.constraints.add(_sum == 1)
 
-        if (mode_t in ('FULL', 'UARCH')) and self.mu > 0:
+        if (mode_t in ('FULL', 'UARCH')) and (self.mu > 0 or self.sample_clonal is not None):
             for _k in range(k):
                 for _n in range(1, n):
                     model.constraints.add(x[(_n, _k)] >= self.u[_n][_k])
-                    model.constraints.add(self.u[_n][_k] >= self.mu * x[(_n, _k)])
+                    if self.mu > 0:
+                        model.constraints.add(self.u[_n][_k] >= self.mu * x[(_n, _k)])
+
+        self.apply_sample_clonal_constraints(model, x)
 
         # buildOptionalConstraints
         if (mode_t in ('FULL', 'CARCH')) and d > 0:
@@ -455,6 +477,44 @@ class ILPSubset:
                 model.fixed_matrix_constraints.add(self.cB[entry.row_index][entry.column_index] == entry.value)
             elif entry.matrix == 'U' and self.mode in ('FULL', 'UARCH'):
                 model.fixed_matrix_constraints.add(self.u[entry.row_index][entry.column_index] == entry.value)
+
+    def apply_sample_clonal_constraints(self, model, presence):
+        if self.sample_clonal is None:
+            return
+
+        model.sample_clonal_constraints = pe.ConstraintList()
+        if self.mode == 'FULL':
+            for entry in self.sample_clonal.entries:
+                for clone_index in range(1, self.n):
+                    clone_present = presence[(clone_index, entry.sample_index)]
+                    model.sample_clonal_constraints.add(
+                        self.cA[entry.cluster_index][clone_index] - entry.cn_a <= self.cn_max * (1 - clone_present)
+                    )
+                    model.sample_clonal_constraints.add(
+                        entry.cn_a - self.cA[entry.cluster_index][clone_index] <= self.cn_max * (1 - clone_present)
+                    )
+                    model.sample_clonal_constraints.add(
+                        self.cB[entry.cluster_index][clone_index] - entry.cn_b <= self.cn_max * (1 - clone_present)
+                    )
+                    model.sample_clonal_constraints.add(
+                        entry.cn_b - self.cB[entry.cluster_index][clone_index] <= self.cn_max * (1 - clone_present)
+                    )
+        elif self.mode == 'CARCH':
+            for entry in self.sample_clonal.entries:
+                for clone_index in range(1, self.n):
+                    if self._fixed_u[clone_index][entry.sample_index] > self.tol:
+                        model.sample_clonal_constraints.add(self.cA[entry.cluster_index][clone_index] == entry.cn_a)
+                        model.sample_clonal_constraints.add(self.cB[entry.cluster_index][clone_index] == entry.cn_b)
+        elif self.mode == 'UARCH':
+            for sample_index in range(self.k):
+                entries = self.sample_clonal.entries_for_sample(sample_index)
+                for clone_index in range(1, self.n):
+                    if any(
+                        int(self._fixed_cA[entry.cluster_index][clone_index]) != entry.cn_a
+                        or int(self._fixed_cB[entry.cluster_index][clone_index]) != entry.cn_b
+                        for entry in entries
+                    ):
+                        model.sample_clonal_constraints.add(self.u[clone_index][sample_index] == 0)
 
     def overlay_fixed_matrix(self, matrix, values):
         if self.fixed_matrix is None:
@@ -596,6 +656,10 @@ class ILPSubset:
         # TODO: sanity checks in fixC
 
     def build_random_u(self, random_seed=None):
+        if self.sample_clonal is not None:
+            with Random(random_seed):
+                return self.build_sample_clonal_u()
+
         def _calculate_size_bubbles(mu):
             if mu <= 0.1:
                 return 10
@@ -637,6 +701,105 @@ class ILPSubset:
                 v = _build_partition_vector(self.n, n_parts, size_bubbles, mu=self.mu)
                 U[:, _k] = v
         self.condition_fixed_u(U)
+        return U
+
+    def build_sample_clonal_u(self):
+        if self.purities is None or len(self.purities) != self.k:
+            raise ValueError('Sample-clonal seeds require one derived purity per sample')
+
+        U = np.zeros((self.n, self.k))
+        fixed_tumor_clones = {sample_index: set() for sample_index in range(self.k)}
+        assigned_samples = {clone_index: set() for clone_index in range(1, self.n)}
+
+        for sample_index, purity in enumerate(self.purities):
+            U[0][sample_index] = 1 - purity
+
+        if self.fixed_matrix is not None:
+            for entry in self.fixed_matrix.entries_for('U'):
+                clone_index = entry.row_index
+                sample_index = entry.column_index
+                if clone_index == 0:
+                    if abs(entry.value - U[0][sample_index]) > self.tol:
+                        raise ValueError(
+                            f'Fixed normal proportion for sample {sample_index} conflicts with sample-clonal purity'
+                        )
+                    continue
+                fixed_tumor_clones[sample_index].add(clone_index)
+                U[clone_index][sample_index] = entry.value
+                if entry.value > self.tol:
+                    assigned_samples[clone_index].add(sample_index)
+
+        states_by_sample = {}
+        for sample_index in range(self.k):
+            states_by_sample[sample_index] = {
+                entry.cluster_index: (entry.cn_a, entry.cn_b)
+                for entry in self.sample_clonal.entries_for_sample(sample_index)
+            }
+
+        def compatible(left, right):
+            shared_clusters = set(states_by_sample[left]).intersection(states_by_sample[right])
+            return all(
+                states_by_sample[left][cluster] == states_by_sample[right][cluster] for cluster in shared_clusters
+            )
+
+        for clone_index, sample_indices in assigned_samples.items():
+            sample_indices = tuple(sample_indices)
+            if any(
+                not compatible(sample_indices[left], sample_indices[right])
+                for left in range(len(sample_indices))
+                for right in range(left + 1, len(sample_indices))
+            ):
+                raise ValueError(f'Fixed U entries assign clone {clone_index} to incompatible samples')
+
+        residual_by_sample = {}
+        for sample_index, purity in enumerate(self.purities):
+            fixed_tumor_sum = sum(U[clone_index][sample_index] for clone_index in range(1, self.n))
+            residual = purity - fixed_tumor_sum
+            if residual < -self.tol:
+                raise ValueError(f'Fixed tumor proportions exceed sample-clonal purity for sample {sample_index}')
+            if residual > self.tol:
+                if self.mu > 0 and residual < self.mu - self.tol:
+                    raise ValueError(
+                        f'Remaining tumor purity {residual} for sample {sample_index} is below minprop {self.mu}'
+                    )
+                residual_by_sample[sample_index] = residual
+
+        sample_order = list(residual_by_sample)
+        np.random.shuffle(sample_order)
+        sample_order.sort(
+            key=lambda sample_index: sum(
+                not compatible(sample_index, other_index) for other_index in residual_by_sample
+            ),
+            reverse=True,
+        )
+
+        assignment = {}
+
+        def assign_sample(position):
+            if position == len(sample_order):
+                return True
+            sample_index = sample_order[position]
+            candidates = [
+                clone_index
+                for clone_index in range(1, self.n)
+                if clone_index not in fixed_tumor_clones[sample_index]
+                and all(compatible(sample_index, assigned) for assigned in assigned_samples[clone_index])
+            ]
+            np.random.shuffle(candidates)
+            for clone_index in candidates:
+                assigned_samples[clone_index].add(sample_index)
+                assignment[sample_index] = clone_index
+                if assign_sample(position + 1):
+                    return True
+                assigned_samples[clone_index].remove(sample_index)
+                del assignment[sample_index]
+            return False
+
+        if not assign_sample(0):
+            raise ValueError('No feasible tumor-clone assignment exists for the sample-clonal states')
+
+        for sample_index, clone_index in assignment.items():
+            U[clone_index][sample_index] = residual_by_sample[sample_index]
         return U
 
     def condition_fixed_u(self, u):
@@ -726,6 +889,8 @@ class ILPSubsetSplit(ILPSubset):
         lengths,
         purities=None,
         fixed_matrix=None,
+        base=None,
+        sample_clonal=None,
     ):
 
         # Each ILPSubset maintains its own data, so make a deep-copy of passed-in DataFrames
@@ -752,6 +917,8 @@ class ILPSubsetSplit(ILPSubset):
         self.copy_numbers = copy_numbers
         self.purities = purities
         self.fixed_matrix = fixed_matrix
+        self._base = base
+        self.sample_clonal = sample_clonal
 
         self.tol = 0.001
 
@@ -785,6 +952,8 @@ class ILPSubsetSplit(ILPSubset):
             lengths=self.lengths,
             purities=self.purities,
             fixed_matrix=self.fixed_matrix,
+            base=self._base,
+            sample_clonal=self.sample_clonal,
         )
 
     def create_model(self, pprint=False):
@@ -895,7 +1064,7 @@ class ILPSubsetSplit(ILPSubset):
                             )
 
         x = {}
-        if (mode_t in ('FULL', 'UARCH')) and (self.mu > 0):
+        if (mode_t in ('FULL', 'UARCH')) and (self.mu > 0 or self.sample_clonal is not None):
             for _n in range(n):
                 for _k in range(k):
                     x[(_n, _k)] = pe.Var(domain=pe.Binary)
@@ -997,7 +1166,7 @@ class ILPSubsetSplit(ILPSubset):
                     _sumA = 0
                     _sumB = 0
                     for _n in range(n):
-                        if self._fixed_u[_n][_k] >= self.mu - self.tol:
+                        if _n == 0 or self._fixed_u[_n][_k] > self.tol:
                             _sumA += self.cA[_m][_n] * self._fixed_u[_n][_k]
                             _sumB += self.cB[_m][_n] * self._fixed_u[_n][_k]
                     model.constraints.add(fA[(_m, _k)] == _sumA)
@@ -1043,11 +1212,14 @@ class ILPSubsetSplit(ILPSubset):
                     _sum += self.u[_n][_k]
                 model.constraints.add(_sum == 1)
 
-        if (mode_t in ('FULL', 'UARCH')) and self.mu > 0:
+        if (mode_t in ('FULL', 'UARCH')) and (self.mu > 0 or self.sample_clonal is not None):
             for _k in range(k):
                 for _n in range(1, n):
                     model.constraints.add(x[(_n, _k)] >= self.u[_n][_k])
-                    model.constraints.add(self.u[_n][_k] >= self.mu * x[(_n, _k)])
+                    if self.mu > 0:
+                        model.constraints.add(self.u[_n][_k] >= self.mu * x[(_n, _k)])
+
+        self.apply_sample_clonal_constraints(model, x)
 
         # buildOptionalConstraints
         if (mode_t in ('FULL', 'CARCH')) and d > 0:

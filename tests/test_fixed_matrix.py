@@ -11,7 +11,14 @@ import pytest
 from pyomo.repn.standard_repn import generate_standard_repn
 
 from hatchet import config
-from hatchet.bin.HATCHet import execute, load_fixed_matrix_entries, makeBaseCMD, parsing_arguments
+from hatchet.bin.HATCHet import (
+    execute,
+    load_fixed_matrix_entries,
+    makeBaseCMD,
+    parsing_arguments,
+    runningDiploid,
+    runningTetraploid,
+)
 from hatchet.utils.commands import commands
 from hatchet.utils.fixed_matrix_editor import main as fixed_matrix_editor
 from hatchet.utils.fixed_matrix import (
@@ -22,6 +29,7 @@ from hatchet.utils.fixed_matrix import (
     verify_fixed_matrix_solution,
 )
 from hatchet.utils.solve.ilp_subset import ILPSubset, ILPSubsetSplit
+from hatchet.utils.solve import solver_available
 
 
 FORMAT_MARKER = '# HATCHET_FIXED_ENTRIES 1'
@@ -76,6 +84,36 @@ B\tcluster-01\tnormal\t1
         fixed.clones = 4
     with pytest.raises(FrozenInstanceError):
         fixed.entries[0].value = 0.5
+
+
+def test_parse_fixed_matrix_accepts_utf8_bom_blank_lines_and_arbitrary_row_order(tmp_path):
+    path = tmp_path / 'fixed-bom.tsv'
+    path.write_bytes(
+        (
+            f'{FORMAT_MARKER}\n'
+            '# clones 3\n'
+            '\n'
+            '# Entries intentionally appear in B, U, A order.\n'
+            'matrix\trow\tcolumn\tvalue\n'
+            'B\tcluster1\tclone2\t1\n'
+            '\n'
+            'U\tclone1\tsample1\t0.3\n'
+            'A\tcluster1\tclone1\t2\n'
+        ).encode('utf-8-sig')
+    )
+
+    fixed = parse_fixed_matrix(path)
+
+    assert tuple(entry.matrix for entry in fixed.entries) == ('B', 'U', 'A')
+    assert tuple(entry.value for entry in fixed.entries) == (1, 0.3, 2)
+
+
+def test_parse_fixed_matrix_rejects_invalid_utf8(tmp_path):
+    path = tmp_path / 'invalid-encoding.tsv'
+    path.write_bytes(b'\xff\xfe\x00')
+
+    with pytest.raises(FixedMatrixFormatError, match='must use UTF-8 encoding'):
+        parse_fixed_matrix(path)
 
 
 @pytest.mark.parametrize(
@@ -186,10 +224,17 @@ def test_resolve_fixed_matrix_rejects_unknown_seg_identifiers(tmp_path, rows, me
 
 
 def test_validate_fixed_matrix_accepts_compatible_partial_entries(tmp_path):
-    fixed = _parse_and_resolve(
+    _parse_and_resolve(
         tmp_path,
         'A\tcluster1\tclone1\t2\n' 'B\tcluster1\tclone1\t1\n' 'U\tnormal\tsample1\t0.2\n' 'U\tclone1\tsample1\t0.3\n',
     )
+
+
+@pytest.mark.parametrize('fixed_proportion', (0.0, 0.029, 0.03))
+def test_validate_fixed_matrix_accepts_minprop_boundaries(tmp_path, fixed_proportion):
+    fixed = _parse_and_resolve(tmp_path, f'U\tclone1\tsample1\t{fixed_proportion}\n')
+
+    assert validate_fixed_matrix(fixed, cn_max=6, mu=0.03) is fixed
 
     assert (
         validate_fixed_matrix(
@@ -320,6 +365,32 @@ def test_compute_cn_fixed_matrix_uses_ini_default_and_checks_path(tmp_path, monk
         parsing_arguments(['-i', input_prefix, '-x', str(tmp_path), '-n', '3'])
 
 
+def test_compute_cn_fixed_matrix_cli_ini_and_environment_precedence(tmp_path, monkeypatch):
+    monkeypatch.setattr(config.compute_cn, 'solver', 'gurobi')
+    input_prefix = _compute_cn_input(tmp_path)
+    ini_path = _write_fixed_matrix(
+        tmp_path,
+        f'{FORMAT_MARKER}\n# clones 3\nmatrix\trow\tcolumn\tvalue\nA\tini\tclone1\t2\n',
+    )
+    environment_path = tmp_path / 'environment.tsv'
+    environment_path.write_text(f'{FORMAT_MARKER}\n# clones 3\nmatrix\trow\tcolumn\tvalue\nA\tenvironment\tclone1\t2\n')
+    cli_path = tmp_path / 'cli.tsv'
+    cli_path.write_text(f'{FORMAT_MARKER}\n# clones 3\nmatrix\trow\tcolumn\tvalue\nA\tcli\tclone1\t2\n')
+    monkeypatch.setattr(config.compute_cn, 'fixedmatrix', str(ini_path))
+
+    parsed_ini = parsing_arguments(['-i', input_prefix, '-x', str(tmp_path), '-n', '3'])
+    assert parsed_ini['fixedmatrix'] == str(ini_path)
+
+    monkeypatch.setenv('HATCHET_COMPUTE_CN_FIXEDMATRIX', str(environment_path))
+    parsed_environment = parsing_arguments(['-i', input_prefix, '-x', str(tmp_path), '-n', '3'])
+    assert parsed_environment['fixedmatrix'] == str(environment_path)
+
+    parsed_cli = parsing_arguments(
+        ['-i', input_prefix, '-x', str(tmp_path), '-n', '3', '--fixed-matrix', str(cli_path)]
+    )
+    assert parsed_cli['fixedmatrix'] == str(cli_path)
+
+
 def test_load_fixed_matrix_entries_checks_metadata_and_seg_identifiers(tmp_path):
     fixed_path = _write_fixed_matrix(
         tmp_path,
@@ -425,6 +496,7 @@ def cpp_fixed_matrix_reader(tmp_path_factory):
             '-I' + str(repository / 'src'),
             str(repository / 'tests' / 'fixed_matrix_cpp_test.cpp'),
             str(repository / 'src' / 'fixed_matrix.cpp'),
+            str(repository / 'src' / 'sample_clonal.cpp'),
             str(repository / 'src' / 'utils.cpp'),
             '-pthread',
             '-o',
@@ -445,6 +517,28 @@ def test_cpp_fixed_matrix_parser_and_operations(tmp_path, cpp_fixed_matrix_reade
     subprocess.run([str(cpp_fixed_matrix_reader), str(fixed_path)], check=True)
 
 
+def test_cpp_fixed_matrix_parser_accepts_utf8_bom_blank_lines_and_arbitrary_order(
+    tmp_path,
+    cpp_fixed_matrix_reader,
+):
+    fixed_path = tmp_path / 'native-bom.tsv'
+    fixed_path.write_bytes(
+        (
+            f'{FORMAT_MARKER}\n'
+            '# clones 3\n'
+            '\n'
+            'matrix\trow\tcolumn\tvalue\n'
+            'U\tclone1\tsample1\t0.3\n'
+            'B\tcluster2\tclone2\t1\n'
+            '\n'
+            'A\tcluster1\tclone1\t2\n'
+            'U\tnormal\tsample1\t0.2\n'
+        ).encode('utf-8-sig')
+    )
+
+    subprocess.run([str(cpp_fixed_matrix_reader), str(fixed_path)], check=True)
+
+
 def test_cpp_fixed_matrix_parser_rejects_invalid_clone_labels(tmp_path, cpp_fixed_matrix_reader):
     fixed_path = _write_fixed_matrix(
         tmp_path,
@@ -457,6 +551,56 @@ def test_cpp_fixed_matrix_parser_rejects_invalid_clone_labels(tmp_path, cpp_fixe
     )
     assert result.returncode == 1
     assert 'invalid clone label' in result.stderr
+
+
+@pytest.mark.parametrize(
+    ('rows', 'scenario', 'message'),
+    [
+        ('A\tcluster1\tclone1\t7\n', 'bound', 'exceeds the copy-number bound'),
+        ('A\tcluster1\tclone1\t2\n', 'clonal', 'conflicts with a clonal copy number'),
+        ('U\tclone1\tsample1\t0.01\n', 'minprop', 'between 0 and the minimum clone proportion'),
+        (
+            'U\tnormal\tsample1\t0.7\nU\tclone1\tsample1\t0.4\n',
+            'mixture',
+            'sum to more than 1',
+        ),
+        (
+            'A\tcluster1\tclone1\t1\nA\tcluster1\tclone2\t3\n',
+            'ampdel',
+            'force both amplification and deletion',
+        ),
+        (
+            'A\tcluster1\tclone1\t1\nB\tcluster1\tclone1\t0\n' 'A\tcluster1\tclone2\t2\nB\tcluster1\tclone2\t0\n',
+            'cnstates',
+            'exceed the maximum number of copy-number states',
+        ),
+        (
+            'A\tcluster1\tclone1\t0\nB\tcluster1\tclone1\t0\n',
+            'large-zero',
+            'large cluster cannot have fixed tumor copy number',
+        ),
+    ],
+)
+def test_cpp_fixed_matrix_validation_matches_documented_constraints(
+    tmp_path,
+    cpp_fixed_matrix_reader,
+    rows,
+    scenario,
+    message,
+):
+    fixed_path = _write_fixed_matrix(
+        tmp_path,
+        f'{FORMAT_MARKER}\n# clones 3\nmatrix\trow\tcolumn\tvalue\n{rows}',
+    )
+
+    result = subprocess.run(
+        [str(cpp_fixed_matrix_reader), str(fixed_path), '3', scenario],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert message in result.stderr
 
 
 @pytest.mark.parametrize(('_seg_path', 'fixed_path'), BINNING_SCENARIOS)
@@ -672,6 +816,180 @@ def test_verify_fixed_matrix_solution_checks_all_requested_cells(tmp_path):
     cA[0][1] = 3
     with pytest.raises(RuntimeError, match='solver returned 3.*expected 2'):
         verify_fixed_matrix_solution(fixed, cA, cB, u)
+
+
+def test_fixed_matrix_solve_preserves_constraints_with_positive_residual(tmp_path):
+    if not solver_available('gurobi'):
+        pytest.skip('a working Gurobi Pyomo solver is unavailable')
+    fixed = _parse_and_resolve(
+        tmp_path,
+        'A\tcluster1\tclone1\t3\nU\tnormal\tsample1\t0.5\nU\tclone1\tsample1\t0.5\n',
+        clones=2,
+    )
+    ilp = _build_ilp(n=2, fixed_matrix=fixed)
+
+    objective, c_a, c_b, u, _, _ = ilp.run(solver_type='gurobi', timelimit=30)
+
+    assert objective > 0
+    assert c_a[0][1] == 3
+    assert u[0][0] == pytest.approx(0.5)
+    assert u[1][0] == pytest.approx(0.5)
+    verify_fixed_matrix_solution(fixed, c_a, c_b, u)
+
+
+def test_partially_fixed_matrix_can_pass_local_validation_but_make_solver_infeasible(tmp_path):
+    if not solver_available('gurobi'):
+        pytest.skip('a working Gurobi Pyomo solver is unavailable')
+    fixed = _parse_and_resolve(
+        tmp_path,
+        'A\tcluster1\tclone1\t4\nB\tcluster1\tclone1\t2\n'
+        'A\tcluster2\tclone1\t4\nB\tcluster2\tclone1\t2\n'
+        'A\tcluster1\tclone2\t0\nB\tcluster1\tclone2\t1\n'
+        'A\tcluster2\tclone2\t0\n',
+        clones=3,
+    )
+    assert (
+        validate_fixed_matrix(
+            fixed,
+            cn_max=6,
+            mu=0.03,
+            ampdel=False,
+            weights={'cluster1': 1, 'cluster2': 1},
+        )
+        is fixed
+    )
+    ilp = _build_ilp(n=3, fixed_matrix=fixed)
+
+    assert ilp.run(solver_type='gurobi', timelimit=30) is None
+
+
+def test_unforced_model_selection_routes_same_fixed_matrix_to_both_branches(tmp_path, monkeypatch):
+    input_prefix = DATA_FOLDER / 'fw' / 'bulk'
+    fixed_path = DATA_FOLDER / 'fw' / 'fixed-matrix.tsv'
+    monkeypatch.setattr(config.compute_cn, 'solver', 'gurobi')
+    seen = []
+
+    def capture_diploid(neutral, args, clonal=None):
+        seen.append(('diploid', args['fixed']))
+        return [(2, 0.0, str(tmp_path / 'diploid'))]
+
+    def capture_tetraploid(clonal, scale, size, args):
+        seen.append(('tetraploid', args['fixed']))
+        return [(2, 0.0, str(tmp_path / 'tetraploid'))]
+
+    monkeypatch.setattr('hatchet.bin.HATCHet.runningDiploid', capture_diploid)
+    monkeypatch.setattr(
+        'hatchet.bin.HATCHet.findClonalClusters', lambda **kwargs: ({'1': (2, 2), '2': (2, 1)}, ('1', '2'))
+    )
+    monkeypatch.setattr('hatchet.bin.HATCHet.runningTetraploid', capture_tetraploid)
+    monkeypatch.setattr('hatchet.bin.HATCHet.select', lambda **kwargs: None)
+
+    from hatchet.bin.HATCHet import main as compute_cn
+
+    compute_cn(
+        args=[
+            '-i',
+            str(input_prefix),
+            '-x',
+            str(tmp_path),
+            '-n',
+            '2',
+            '--fixed-matrix',
+            str(fixed_path),
+            '-v',
+            '0',
+        ]
+    )
+
+    assert [branch for branch, _ in seen] == ['diploid', 'tetraploid']
+    assert seen[0][1] is seen[1][1]
+
+
+@pytest.mark.parametrize(
+    ('runner', 'expected_bound'),
+    ((runningDiploid, 6), (runningTetraploid, 12)),
+)
+def test_fixed_matrix_uses_active_ploidy_copy_bound(tmp_path, monkeypatch, runner, expected_bound):
+    fixed = object()
+    args = {
+        'sample_clonal_entries': None,
+        'solver': 'solve',
+        'input': 'bulk',
+        'ampdel': False,
+        'd': None,
+        'j': None,
+        'p': 1,
+        'u': None,
+        'm': None,
+        's': None,
+        'f': None,
+        'r': None,
+        'M': 1,
+        'fixedmatrix': '/tmp/fixed.tsv',
+        'fixed': fixed,
+        'purities': None,
+        'eD': 6,
+        'eT': 12,
+        'ln': 2,
+        'un': 2,
+        'v': 0,
+        'x': str(tmp_path),
+    }
+    calls = []
+    monkeypatch.setattr(
+        'hatchet.bin.HATCHet.execute',
+        lambda passed_args, basecmd, n, outprefix: calls.append((dict(passed_args), basecmd)) or 0,
+    )
+
+    if runner is runningDiploid:
+        runner(neutral='1', args=args)
+    else:
+        runner(clonal={'1': (2, 2), '2': (2, 1)}, scale=('1', '2'), size={}, args=args)
+
+    passed_args, basecmd = calls[0]
+    assert passed_args['fixed'] is fixed
+    assert passed_args['e'] == expected_bound
+    assert f'-e {expected_bound}' in basecmd
+    assert '-F /tmp/fixed.tsv' in basecmd
+
+
+def test_unforced_model_selection_reports_branch_specific_fixed_matrix_bound_conflict(tmp_path, monkeypatch):
+    if not solver_available('gurobi'):
+        pytest.skip('a working Gurobi Pyomo solver is unavailable')
+    fixed_path = _write_fixed_matrix(
+        tmp_path,
+        f'{FORMAT_MARKER}\n# clones 2\nmatrix\trow\tcolumn\tvalue\nA\t2\tclone1\t7\n',
+    )
+    monkeypatch.setattr(config.compute_cn, 'solver', 'gurobi')
+    from hatchet.bin.HATCHet import main as compute_cn
+
+    with pytest.raises(FixedMatrixFormatError, match='copy-number bound 6'):
+        compute_cn(
+            args=[
+                '-i',
+                str(DATA_FOLDER / 'fw' / 'bulk'),
+                '-x',
+                str(tmp_path),
+                '-n',
+                '2',
+                '-p',
+                '1',
+                '-j',
+                '1',
+                '-v',
+                '0',
+                '--mode',
+                '1',
+                '-s',
+                '30',
+                '-eD',
+                '8',
+                '-eT',
+                '6',
+                '--fixed-matrix',
+                str(fixed_path),
+            ]
+        )
 
 
 def _linear_coefficients(constraint):

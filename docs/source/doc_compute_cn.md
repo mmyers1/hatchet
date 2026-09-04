@@ -140,9 +140,107 @@ This steps have two main parameters to control the model-selection criterion:
 | `-l`, `--limitinc` | Sensitivity level | The sensitivity level is used to control the confidence in evaluating the presence of tumor clones characterized by small CNAs. By decreasing the value of the sensitivity, HATCHet is more sensible to the presence of small CNAs and small clusters or with small shifts in RDR/BAF are more likely considered as the signal of an additional tumor clone. The possible values of this parameter are between 1.0 and 0.0 and specifically corresponds to an upper bound for the left relative improvement of the objective function. | None, reasonable values to use can be 0.6, 0.5, 0.4, 0.3, 0.2, ... according to the values of the objective function. |
 | `-g`, `--ghostprop` | Confidence in the presence of a single tumor clone | This value expresses the confidence of HATCHet when evaluating the presence of a single tumor clone. The higher the value the more likely the presence of a single clone is considered | 0.2 |
 
-## [EXPERT FEATURE] Fixing entries of A, B, and U
+# Expert options
 
-Experts may provide hard constraints for selected entries of the simultaneous factorization while leaving all other entries free. This can be useful when copy-number states are known for particular clones or when external evidence supports mixture proportions for a subset of samples. **WARNING: This feature is not recommended for users who lack considerable experience refining HATCHet2 solutions, as forcing specific values can easily produce poorly supported results.**
+**WARNING: These options are not recommended for users who lack considerable experience refining HATCHet2 solutions, as they restrict the factorization and may produce implausible results if used improperly.**
+
+## [EXPERT OPTION] Sample-clonal override
+
+An expert may bypass both automatic clonal-cluster identification and the global `--clonal` override by supplying two **sample-clonal** reference states for every sample. A sample-clonal cluster has one copy-number state in every tumor clone that is present in that sample; the state and cluster may differ between samples.
+
+This option is intended for experts who have visually identified reliable clonal clusters. Incorrect reference states impose hard constraints on the factorization and can produce infeasible or misleading results.
+
+For each sample `p`, the two references provide cluster RDRs `r1` and `r2` and distinct total copy numbers `w1` and `w2`. HATCHet derives the sample scaling factor and purity from the HATCHet Theorem 1 system:
+
+```text
+gamma[p] * r1 = 2 * (1 - purity[p]) + w1 * purity[p]
+gamma[p] * r2 = 2 * (1 - purity[p]) + w2 * purity[p]
+```
+
+The two total copy numbers must differ and the system must be nonsingular. The resulting scaling factor must be positive and the purity must be in `[0, 1]`. Scaling uses total copy number, while factorization enforcement uses the supplied allele-specific `cn_a` and `cn_b` values.
+
+### Inline form
+
+Use `--sample-clonal` with one semicolon-separated specification per sample:
+
+```bash
+hatchet compute-cn \
+	-i /path/to/bulk \
+	--diploid \
+	--sample-clonal 'Tumor1=3:1:1,5:2:1;Tumor2=4:1:1,8:2:0'
+```
+
+The grammar is:
+
+```text
+SAMPLE=CLUSTER:CN_A:CN_B,CLUSTER:CN_A:CN_B[;SAMPLE=...]
+```
+
+The identifiers must exactly match the `SAMPLE` and `#ID` columns of the SEG input. The characters `=`, `;`, `,`, and `:` are reserved delimiters in this form. Use the TSV form when an identifier contains one of these characters.
+
+The equivalent INI setting is:
+
+```ini
+[compute_cn]
+sampleclonal = Tumor1=3:1:1,5:2:1;Tumor2=4:1:1,8:2:0
+diploid = True
+```
+
+It can also be supplied through `HATCHET_COMPUTE_CN_SAMPLECLONAL`.
+
+### Versioned TSV form
+
+Use `--sample-clonal-file` for larger or programmatically generated specifications:
+
+```bash
+hatchet compute-cn \
+	-i /path/to/bulk \
+	--tetraploid \
+	--sample-clonal-file /path/to/patient.sample-clonal.tsv
+```
+
+The UTF-8, tab-separated file is versioned and has four columns:
+
+```text
+# HATCHET_SAMPLE_CLONAL 1
+sample	cluster	cn_a	cn_b
+Tumor1	3	2	2
+Tumor1	5	2	1
+Tumor2	4	2	2
+Tumor2	8	2	0
+```
+
+Blank lines and comment lines are allowed after the format marker. Rows may appear in any order. Every SEG sample must appear exactly twice, the two cluster IDs for one sample must be distinct, and all allele copy numbers must be nonnegative integers.
+
+The equivalent INI and environment settings are:
+
+```ini
+[compute_cn]
+sampleclonalfile = /path/to/patient.sample-clonal.tsv
+tetraploid = True
+```
+
+```text
+HATCHET_COMPUTE_CN_SAMPLECLONALFILE=/path/to/patient.sample-clonal.tsv
+```
+
+### Constraints and option interactions
+
+- Exactly one of `--diploid` or `--tetraploid` is required. The sample-clonal override does not run automatic WGD model selection.
+- `--sample-clonal` and `--sample-clonal-file` are mutually exclusive.
+- Sample-clonal input cannot be combined with global `--clonal` assignments.
+- `--purities` may be supplied as an independent check. Every value must agree with the purity derived from the sample-clonal references within absolute tolerance `0.05`; the derived values are used by the solver.
+- The normal proportion is fixed to `1 - purity[p]` in every sample.
+- For each supplied reference, every tumor clone with positive proportion in that sample is constrained to the supplied A/B state. Clones absent from the sample are not constrained by that sample.
+- The same cluster may have different states in different samples. In that case, a shared tumor clone cannot be present in both samples unless it satisfies both states.
+- Clone-count ranges remain supported because the input does not name tumor clone columns. The solver reports an error when too few tumor clones are available to satisfy incompatible sample states.
+- A `--fixed-matrix` file may be used simultaneously. Fixed-positive tumor clones must satisfy the corresponding sample-clonal states, fixed normal proportions must match derived purity, and remaining tumor purity must be assignable to a compatible clone.
+- Required states must satisfy the active `--diploidcmax` or `--tetraploidcmax`, amp/del constraints, the deprecated `--cnstates` limit, and the existing nonzero constraint for large clusters.
+
+
+## [EXPERT OPTION] Fixing entries of A, B, and U
+
+Experts may provide hard constraints for selected entries of the simultaneous factorization while leaving all other entries free. This can be useful when copy-number states are known for particular clones or when external evidence supports mixture proportions for a subset of samples.
 
 For `m` segmental clusters, `n` total clones, and `k` bulk samples, HATCHet uses:
 
@@ -197,14 +295,12 @@ U	clone1	Tumor1	0.40
 
 The first line must be the format marker shown above. The clone-count metadata must appear before the header and must equal the exact `compute-cn` clone count. `n` includes the normal clone, so `# clones 3` defines `normal`, `clone1`, and `clone2`.
 
-Each data row has four fields:
+Each data row has four fields. There are two types of rows, one for A/B entries and the other for U entries.
 
-| Field | A or B entry | U entry |
-|-------|--------------|---------|
-| `matrix` | `A` or `B` | `U` |
-| `row` | Exact cluster ID from the `#ID` column of the SEG file | `normal` or `cloneN` |
-| `column` | `normal` or `cloneN` | Exact sample name from the `SAMPLE` column of the SEG file |
-| `value` | Nonnegative integer copy number | Finite number in `[0, 1]` |
+| `matrix` | `row` | `column` | `value` |
+|----------|-------|----------|---------|
+|`A` or `B` | Exact cluster ID from the `#ID` column of the SEG file | `normal` or `cloneN` | Nonnegative integer copy number |
+| `U` | `normal` or `cloneN` | Exact sample name from the `SAMPLE` column of the SEG file | Finite number in `[0, 1]` |
 
 Only listed entries are fixed. Data rows may appear in any order, blank lines and comment lines are allowed, and identifiers are matched exactly. Duplicate matrix coordinates are rejected rather than overwritten. A file must contain at least one data row.
 
@@ -253,6 +349,3 @@ sum_s (s + 1) (A[s, i] + B[s, i]) <= sum_s (s + 1) (A[s, i + 1] + B[s, i + 1])
 ```
 
 Fully specified entries that violate this ordering are rejected when the conflict can be determined before solving. Partial entries may still produce a globally infeasible model; in that case the solver reports that no constrained solution is feasible.
-
-
-## Additional parameters

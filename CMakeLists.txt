@@ -24,9 +24,10 @@ add_executable ( solve
     src/solve.cpp
     src/fixed_matrix.h
     src/fixed_matrix.cpp
+    src/sample_clonal.h
+    src/sample_clonal.cpp
     src/ilp-min.h
     src/ilp-min.cpp
-    src/gurobi-utils.h
     src/utils.h
     src/utils.cpp
     src/argparse.h

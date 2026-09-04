@@ -3,6 +3,8 @@
 
 #include "utils.h"
 
+class SampleClonal;
+
 typedef enum {
     MATRIX_A = 0,
     MATRIX_B = 1,
@@ -57,6 +59,16 @@ public:
                   const int cnstates,
                   const CNMap& copyNumbers,
                   const DoubleArray& weights) const;
+
+    void validate(const int cmax,
+                  const double mu,
+                  const int base,
+                  const bool ampdel,
+                  const int cnstates,
+                  const CNMap& copyNumbers,
+                  const DoubleArray& weights,
+                  const SampleClonal& sampleClonal,
+                  const DoubleArray& purities) const;
 
     void applyCopyNumbers(IntMatrix& A, IntMatrix& B) const;
     void applyProportions(DoubleMatrix& U) const;

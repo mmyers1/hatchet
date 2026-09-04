@@ -35,6 +35,11 @@ public:
         return _F;
     }
 
+    const std::string& sampleClonal() const
+    {
+        return _S;
+    }
+
     int n() const
     {
         return _n;
@@ -140,6 +145,8 @@ private:
     std::string _inputBBC;
     /// Optional file of fixed A, B, and U entries
     std::string _F;
+    /// Optional file of sample-clonal calibration entries
+    std::string _S;
     /// Clonal segments
     CNAssignCluster _cn;
     //
@@ -176,6 +183,7 @@ private:
     double _t;
     ///
     int _base;
+    bool _baseSpecified;
     ///
     bool _f;
 

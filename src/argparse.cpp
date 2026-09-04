@@ -8,6 +8,7 @@ ArgParse::ArgParse(int argc, char** argv)
     , _inputSEG()
     , _inputBBC()
     , _F()
+    , _S()
     , _cn()
     , _scalingcn()
     , _h(false)
@@ -26,6 +27,7 @@ ArgParse::ArgParse(int argc, char** argv)
     , _o()
     , _t(0.1)
     , _base(1)
+    , _baseSpecified(false)
     , _f(false)
     , _args()
     , _required()
@@ -49,6 +51,8 @@ ArgParse::ArgParse(int argc, char** argv)
     _args.insert("-t");
     _args.insert("-f");
     _args.insert("-F");
+    _args.insert("-S");
+    _args.insert("-b");
 
     _required.insert(std::make_pair("input", false));
     _required.insert(std::make_pair("-n", false));
@@ -70,8 +74,23 @@ ArgParse::ArgParse(int argc, char** argv)
     _optional["-t"] = false;
     _optional["-f"] = false;
     _optional["-F"] = false;
+    _optional["-S"] = false;
+    _optional["-b"] = false;
 
     parse();
+
+    if(!_S.empty() && _optional.at("-c"))
+    {
+        throw "Sample-clonal input cannot be used with clonal copy numbers!";
+    }
+    if(!_S.empty() && !_baseSpecified)
+    {
+        throw "Sample-clonal input requires an explicit factorization base with -b 1 or -b 2!";
+    }
+    if(_S.empty() && _baseSpecified)
+    {
+        throw "The explicit factorization base -b is only valid with sample-clonal input -S!";
+    }
 
     if(!_optional.at("-o"))
     {
@@ -89,7 +108,7 @@ std::string ArgParse::help()
 {
     std::stringstream res;
     res << "\033[96m" << "\033[1m" << "USAGE:" << "\033[0m" << "\033[96m" << std::endl;
-    res << "\t./solve input -n INT [-e INT] [-j INT] [-m INT] [-s INT] [-c COPYNUMBERS] [-F FIXED-MATRIX] [-v] [-h]" << std::endl;
+    res << "\t./solve input -n INT [-e INT] [-j INT] [-m INT] [-s INT] [-c COPYNUMBERS] [-F FIXED-MATRIX] [-S SAMPLE-CLONAL -b BASE] [-v] [-h]" << std::endl;
     res << "\033[96m" << "\033[1m" << "WHERE:" << "\033[0m" << "\033[96m" << std::endl;
     res << "\tinput PREFIX-INPUT\n\t\tCommon prefix for the input files .seg and .bbc (required)" << std::endl;
     res << "\t-n INT-NUMCLONES\n\t\tNumber of tumor clones to infer (required)" << std::endl;
@@ -109,6 +128,8 @@ std::string ArgParse::help()
     res << "\t-t DIPLOID\n\t\tMaximum BAF shift for diploid cluster used to automatically infer the diploid cluster (default: 0.1)" << std::endl;
     res << "\t-f FORCE-AMPDEL\n\t\tForce every mutated segment (not 2 in diploid tumors and not 4 in tetraploid tumors) to be either amplified or deleted in all the clones (default: not applied)" << "\033[0m" << std::endl;
     res << "\t-F FIXED-MATRIX\n\t\tPath to a TSV file containing fixed A, B, and U matrix entries (default: none)" << "\033[0m" << std::endl;
+    res << "\t-S SAMPLE-CLONAL\n\t\tPath to a versioned TSV file containing two sample-clonal states per sample" << std::endl;
+    res << "\t-b BASE\n\t\tFactorization base for sample-clonal input: 1 for diploid or 2 for tetraploid" << "\033[0m" << std::endl;
     return res.str();
 }
 
@@ -143,6 +164,7 @@ std::string ArgParse::toString()
     res << "\tBase:  " << _base << std::endl;
     res << "\tForce amp-del:  " << _f;
     res << "\n\tFixed matrix entries:  " << (_F.empty() ? "none" : _F);
+    res << "\n\tSample-clonal entries:  " << (_S.empty() ? "none" : _S);
     return res.str();
 }
 
@@ -386,6 +408,30 @@ void ArgParse::parseOptional(const std::string &arg, const std::string &value)
         }
         (*_optional.find("-F")).second = true;
         _F = value;
+    } else if (arg == "-S") {
+        if((*_optional.find("-S")).second)
+        {
+            throw "Multiple -S arguments found!";
+        }
+        std::ifstream sampleClonal(value.c_str());
+        if(!sampleClonal.good())
+        {
+            throw "The specified sample-clonal file \"" + value + "\" does not exist or cannot be opened!";
+        }
+        (*_optional.find("-S")).second = true;
+        _S = value;
+    } else if (arg == "-b") {
+        if((*_optional.find("-b")).second)
+        {
+            throw "Multiple -b arguments found!";
+        }
+        if(value != "1" && value != "2")
+        {
+            throw "The sample-clonal factorization base must be 1 or 2!";
+        }
+        (*_optional.find("-b")).second = true;
+        _base = std::atoi(value.c_str());
+        _baseSpecified = true;
     } else if (arg == "-M") {
         if((*_optional.find("-M")).second)
         {

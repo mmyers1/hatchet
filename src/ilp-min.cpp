@@ -13,6 +13,8 @@ IlpSubset::IlpSubset(const int n,
                      const DoubleMatrix& FB,
                      const DoubleArray& w,
                      const FixedMatrix& fixedMatrix,
+                     const SampleClonal& sampleClonal,
+                     const DoubleArray& purities,
                      const VERBOSITY_t v)
     : _n(n)
     , _m(m)
@@ -27,6 +29,8 @@ IlpSubset::IlpSubset(const int n,
     , _FB(FB)
     , _w(w)
     , _fixedMatrix(fixedMatrix)
+    , _sampleClonal(sampleClonal)
+    , _purities(purities)
     , _v(v)
     , _barCA()
     , _barCB()
@@ -122,6 +126,7 @@ void IlpSubset::init()
         buildSymmetryBreaking();
         fixGivenCN();
     }
+    fixSampleClonal();
     fixMatrixEntries();
 
     buildObjective();
@@ -629,7 +634,7 @@ void IlpSubset::buildVariables()
         }
     }
 
-    if((_mode == MODE_t::FULL || _mode == MODE_t::UARCH) && _mu > 0.0)
+    if((_mode == MODE_t::FULL || _mode == MODE_t::UARCH) && (_mu > 0.0 || !_sampleClonal.empty()))
     {
         _x = VarMatrix(_n);
         for(int i = 0; i < _n; ++i)
@@ -792,7 +797,7 @@ void IlpSubset::buildConstraints()
                 sum = 0;
                 for(int i = 0; i < _n; ++i)
                 {
-                    if(_barU[i][p] >= _mu - TOL)
+                    if(i == 0 || _barU[i][p] > TOL)
                     {
                         sum += _cA[s][i] * _barU[i][p];
                     }
@@ -810,7 +815,7 @@ void IlpSubset::buildConstraints()
                 sumB = 0;
                 for(int i = 0; i < _n; ++i)
                 {
-                    if(_barU[i][p] >= _mu - TOL)
+                    if(i == 0 || _barU[i][p] > TOL)
                     {
                         sumB += _cB[s][i] * _barU[i][p];
                     }
@@ -911,14 +916,17 @@ void IlpSubset::buildConstraints()
         }
     }
 
-    if((_mode == MODE_t::FULL || _mode == MODE_t::UARCH) && _mu > 0.0)
+    if((_mode == MODE_t::FULL || _mode == MODE_t::UARCH) && (_mu > 0.0 || !_sampleClonal.empty()))
     {
         for(int p = 0; p < _k; ++p)
         {
             for(int i = 1; i < _n; ++i)
             {
                 _model.addConstr(_x[i][p] >= _u[i][p]);
-                _model.addConstr(_u[i][p] >= _mu * _x[i][p]);
+                if(_mu > 0.0)
+                {
+                    _model.addConstr(_u[i][p] >= _mu * _x[i][p]);
+                }
             }
         }
     }
@@ -1038,6 +1046,78 @@ void IlpSubset::fixMatrixEntries()
         else if(it->matrix == MATRIX_U && (_mode == MODE_t::FULL || _mode == MODE_t::UARCH))
         {
             _model.addConstr(_u[it->row][it->column] == it->value);
+        }
+    }
+}
+
+
+void IlpSubset::fixSampleClonal()
+{
+    if(_sampleClonal.empty())
+    {
+        return;
+    }
+
+    if(_mode == MODE_t::FULL || _mode == MODE_t::UARCH)
+    {
+        for(int sample = 0; sample < _k; ++sample)
+        {
+            _model.addConstr(_u[0][sample] == 1.0 - _purities[sample]);
+        }
+    }
+
+    const std::vector<SampleClonalEntry>& entries = _sampleClonal.entries();
+    if(_mode == MODE_t::FULL)
+    {
+        for(std::vector<SampleClonalEntry>::const_iterator entry = entries.begin(); entry != entries.end(); ++entry)
+        {
+            for(int clone = 1; clone < _n; ++clone)
+            {
+                _model.addConstr(_cA[entry->cluster][clone] - entry->cnA <=
+                                 _cmax * (1.0 - _x[clone][entry->sample]));
+                _model.addConstr(entry->cnA - _cA[entry->cluster][clone] <=
+                                 _cmax * (1.0 - _x[clone][entry->sample]));
+                _model.addConstr(_cB[entry->cluster][clone] - entry->cnB <=
+                                 _cmax * (1.0 - _x[clone][entry->sample]));
+                _model.addConstr(entry->cnB - _cB[entry->cluster][clone] <=
+                                 _cmax * (1.0 - _x[clone][entry->sample]));
+            }
+        }
+    }
+    else if(_mode == MODE_t::CARCH)
+    {
+        for(std::vector<SampleClonalEntry>::const_iterator entry = entries.begin(); entry != entries.end(); ++entry)
+        {
+            for(int clone = 1; clone < _n; ++clone)
+            {
+                if(_barU[clone][entry->sample] > TOL)
+                {
+                    _model.addConstr(_cA[entry->cluster][clone] == entry->cnA);
+                    _model.addConstr(_cB[entry->cluster][clone] == entry->cnB);
+                }
+            }
+        }
+    }
+    else if(_mode == MODE_t::UARCH)
+    {
+        for(int sample = 0; sample < _k; ++sample)
+        {
+            const std::vector<SampleClonalEntry> sampleEntries = _sampleClonal.entriesForSample(sample);
+            for(int clone = 1; clone < _n; ++clone)
+            {
+                bool compatible = true;
+                for(std::vector<SampleClonalEntry>::const_iterator entry = sampleEntries.begin();
+                    entry != sampleEntries.end(); ++entry)
+                {
+                    compatible = compatible &&
+                                 _barCA[entry->cluster][clone] == entry->cnA &&
+                                 _barCB[entry->cluster][clone] == entry->cnB;
+                }
+                if(!compatible)
+                {
+                    _model.addConstr(_u[clone][sample] == 0.0);
+                }
+            }
         }
     }
 }

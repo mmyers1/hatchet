@@ -1,4 +1,5 @@
 #include "fixed_matrix.h"
+#include "sample_clonal.h"
 
 #include <cerrno>
 
@@ -464,6 +465,120 @@ void FixedMatrix::validate(const int cmax,
         if(complete && left > right)
         {
             throw formatError(_source, errorLine, "fully fixed clone burdens violate canonical clone order");
+        }
+    }
+}
+
+
+void FixedMatrix::validate(const int cmax,
+                           const double mu,
+                           const int base,
+                           const bool ampdel,
+                           const int cnstates,
+                           const CNMap& copyNumbers,
+                           const DoubleArray& weights,
+                           const SampleClonal& sampleClonal,
+                           const DoubleArray& purities) const
+{
+    validate(cmax, mu, base, ampdel, cnstates, copyNumbers, weights);
+    if(sampleClonal.empty())
+    {
+        return;
+    }
+
+    std::map<std::tuple<int, int, int>, const FixedMatrixEntry*> values;
+    for(std::vector<FixedMatrixEntry>::const_iterator entry = _entries.begin(); entry != _entries.end(); ++entry)
+    {
+        values[std::make_tuple(entry->matrix, entry->row, entry->column)] = &(*entry);
+    }
+
+    const std::function<bool(int, int)> cloneCompatible =
+        [&values, &sampleClonal](const int clone, const int sample)
+        {
+            const std::vector<SampleClonalEntry> entries = sampleClonal.entriesForSample(sample);
+            for(std::vector<SampleClonalEntry>::const_iterator entry = entries.begin(); entry != entries.end(); ++entry)
+            {
+                const std::map<std::tuple<int, int, int>, const FixedMatrixEntry*>::const_iterator fixedA =
+                    values.find(std::make_tuple(MATRIX_A, entry->cluster, clone));
+                const std::map<std::tuple<int, int, int>, const FixedMatrixEntry*>::const_iterator fixedB =
+                    values.find(std::make_tuple(MATRIX_B, entry->cluster, clone));
+                if((fixedA != values.end() && static_cast<int>(fixedA->second->value) != entry->cnA) ||
+                   (fixedB != values.end() && static_cast<int>(fixedB->second->value) != entry->cnB))
+                {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+    std::map<int, std::vector<int> > fixedPositiveSamples;
+    for(int sample = 0; sample < static_cast<int>(purities.size()); ++sample)
+    {
+        double fixedTumorSum = 0.0;
+        int errorLine = 1;
+        std::set<int> fixedClones;
+        for(int clone = 1; clone < _clones; ++clone)
+        {
+            const std::map<std::tuple<int, int, int>, const FixedMatrixEntry*>::const_iterator fixedU =
+                values.find(std::make_tuple(MATRIX_U, clone, sample));
+            if(fixedU == values.end())
+            {
+                continue;
+            }
+            fixedClones.insert(clone);
+            fixedTumorSum += fixedU->second->value;
+            errorLine = std::max(errorLine, fixedU->second->line);
+            if(fixedU->second->value > TOL)
+            {
+                if(!cloneCompatible(clone, sample))
+                {
+                    throw formatError(_source, fixedU->second->line,
+                                      "fixed-positive tumor clone is incompatible with sample-clonal states");
+                }
+                fixedPositiveSamples[clone].push_back(sample);
+            }
+        }
+        if(fixedTumorSum > purities[sample] + TOL)
+        {
+            throw formatError(_source, errorLine,
+                              "fixed tumor proportions exceed sample-clonal purity");
+        }
+
+        const double residual = purities[sample] - fixedTumorSum;
+        bool eligible = false;
+        for(int clone = 1; clone < _clones; ++clone)
+        {
+            if(fixedClones.count(clone) == 0 && cloneCompatible(clone, sample))
+            {
+                eligible = true;
+                break;
+            }
+        }
+        if(residual > TOL && !eligible)
+        {
+            throw formatError(_source, errorLine,
+                              "no tumor clone is eligible for remaining sample-clonal purity");
+        }
+        if(residual > TOL && mu > 0.0 && residual < mu - TOL)
+        {
+            throw formatError(_source, errorLine,
+                              "remaining sample-clonal purity is below the minimum clone proportion");
+        }
+    }
+
+    for(std::map<int, std::vector<int> >::const_iterator clone = fixedPositiveSamples.begin();
+        clone != fixedPositiveSamples.end(); ++clone)
+    {
+        for(std::vector<int>::size_type left = 0; left < clone->second.size(); ++left)
+        {
+            for(std::vector<int>::size_type right = left + 1; right < clone->second.size(); ++right)
+            {
+                if(!sampleClonal.samplesCompatible(clone->second[left], clone->second[right]))
+                {
+                    throw _source + ": fixed-positive tumor clone is assigned to samples with incompatible "
+                          "sample-clonal states";
+                }
+            }
         }
     }
 }

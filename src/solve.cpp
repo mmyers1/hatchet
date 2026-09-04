@@ -4,6 +4,7 @@
 #include "input_instance.h"
 #include "bbc_instance.h"
 #include "fixed_matrix.h"
+#include "sample_clonal.h"
 #include "ilp-min.h"
 #include "coordinate_descent.h"
 
@@ -36,20 +37,47 @@ int main(int argc, char** argv)
         if(argparse.v() >= VERBOSITY_t::DEBUGGING) {std::cerr << instance;}
 
 
-        if (argparse.cn().size() > 0)
+        SampleClonal sampleClonal;
+        DoubleArray purities;
+        DoubleMatrix F;
+        if(!argparse.sampleClonal().empty())
+        {
+            sampleClonal = SampleClonal::read(argparse.sampleClonal(), instance.clusterToIdx(), instance.sampleToIdx());
+            const SampleClonalCalibration calibration = sampleClonal.calibrate(instance.R(), instance.k());
+            purities = calibration.purity;
+            F = instance.R();
+            for(int cluster = 0; cluster < instance.m(); ++cluster)
+            {
+                for(int sample = 0; sample < instance.k(); ++sample)
+                {
+                    F[cluster][sample] *= calibration.gamma[sample];
+                }
+            }
+            log("Scale the read-depth ratios using sample-clonal states", VERBOSITY_t::ESSENTIAL, argparse.v());
+        }
+        else if (argparse.cn().size() > 0)
         {
             log("Scale the read-depth ratios into fractional copy numbers using the provided copy numbers", VERBOSITY_t::ESSENTIAL, argparse.v());
+            F = scaleReadDepth(instance.R(), argparse.scalingCN(), instance.m(), instance.k(), instance.clusterToIdx(), argparse.v());
         } else {
             argparse.setClonalCluster(inferDiploid(instance, argparse));
             log("Automatically selecting cluster " + argparse.scalingCN().begin()->first + " as diploid", VERBOSITY_t::ESSENTIAL, argparse.v());
             log("Scale the read-depth ratios into fractional copy numbers using the automaticall selected diploid cluster", VERBOSITY_t::ESSENTIAL, argparse.v());
+            F = scaleReadDepth(instance.R(), argparse.scalingCN(), instance.m(), instance.k(), instance.clusterToIdx(), argparse.v());
         }
-        DoubleMatrix F(scaleReadDepth(instance.R(), argparse.scalingCN(), instance.m(), instance.k(), instance.clusterToIdx(), argparse.v()));
         log("Fractional copy numbers:\n" + printFractions(F, instance), VERBOSITY_t::DEBUGGING, argparse.v());
 
         CNMap cn(getCNMap(argparse, instance));
 
         int cmax = argparse.cmax() > 0 ? argparse.cmax() : maxCeil(F);
+        if(!sampleClonal.empty() && argparse.cmax() <= 0)
+        {
+            cmax = std::max(cmax, sampleClonal.maxTotalCopyNumber());
+        }
+        if(!sampleClonal.empty())
+        {
+            sampleClonal.validate(cmax, argparse.base(), argparse.forceAMPDEL(), argparse.d(), instance.w(), purities);
+        }
         log("Inferred maximum copy number:" + std::to_string(cmax), VERBOSITY_t::DEBUGGING, argparse.v());
 
         FixedMatrix fixedMatrix;
@@ -57,8 +85,16 @@ int main(int argc, char** argv)
         {
             fixedMatrix = FixedMatrix::read(argparse.fixedMatrix(), argparse.n(),
                                             instance.clusterToIdx(), instance.sampleToIdx());
-            fixedMatrix.validate(cmax, argparse.minprop(), argparse.base(), argparse.forceAMPDEL(),
-                                 argparse.d(), cn, instance.w());
+            if(sampleClonal.empty())
+            {
+                fixedMatrix.validate(cmax, argparse.minprop(), argparse.base(), argparse.forceAMPDEL(),
+                                     argparse.d(), cn, instance.w());
+            }
+            else
+            {
+                fixedMatrix.validate(cmax, argparse.minprop(), argparse.base(), argparse.forceAMPDEL(),
+                                     argparse.d(), cn, instance.w(), sampleClonal, purities);
+            }
         }
 
         log("Compute allele-specific fractional copy numbers using BAF", VERBOSITY_t::ESSENTIAL, argparse.v());
@@ -77,7 +113,8 @@ int main(int argc, char** argv)
         {
             log("Starting coordinate descent algorithm on " + std::to_string(argparse.nrSeeds()) + " seeds", VERBOSITY_t::ESSENTIAL, argparse.v());
             CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.minprop(), argparse.base(),
-                                 argparse.forceAMPDEL(), cn, fixedMatrix, 2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1,
+                                 argparse.forceAMPDEL(), cn, fixedMatrix, sampleClonal, purities,
+                                 2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1,
                                  argparse.s(), argparse.m(), argparse.v());
             cd.run();
             fixedMatrix.verify(cd.getACN(), cd.getBCN(), cd.getU());
@@ -85,7 +122,7 @@ int main(int argc, char** argv)
 
             log("Starting exact ILP for improving solution found by coordinate descent", VERBOSITY_t::ESSENTIAL, argparse.v());
             IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.base(),
-                          argparse.forceAMPDEL(), cn, FA, FB, instance.w(), fixedMatrix, argparse.v());
+                          argparse.forceAMPDEL(), cn, FA, FB, instance.w(), fixedMatrix, sampleClonal, purities, argparse.v());
             ilp.init();
             ilp.hotStart(cd.getACN(), cd.getBCN());
             ilp.solve(argparse.s(), argparse.m(), argparse.j());
@@ -100,12 +137,13 @@ int main(int argc, char** argv)
             BCN = ilp.getBCNs()[0];
             U = ilp.getUs()[0];
             fixedMatrix.verify(ACN, BCN, U);
+            sampleClonal.verify(ACN, BCN, U, purities);
 
         } else if (argparse.M() == SOLVE_t::ILP)
         {
             log("Starting exact ILP", VERBOSITY_t::ESSENTIAL, argparse.v());
             IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.base(),
-                          argparse.forceAMPDEL(), cn, FA, FB, instance.w(), fixedMatrix, argparse.v());
+                          argparse.forceAMPDEL(), cn, FA, FB, instance.w(), fixedMatrix, sampleClonal, purities, argparse.v());
             ilp.init();
             std::pair<IntMatrix, IntMatrix> hotstart;
             hotstart = IlpSubset::firstHotStart(FA, FB, instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.base(), argparse.forceAMPDEL(), cn);
@@ -123,12 +161,14 @@ int main(int argc, char** argv)
             BCN = ilp.getBCNs()[0];
             U = ilp.getUs()[0];
             fixedMatrix.verify(ACN, BCN, U);
+            sampleClonal.verify(ACN, BCN, U, purities);
 
         } else if (argparse.M() == SOLVE_t::CD)
         {
             log("Starting coordinate descent algorithm on " + std::to_string(argparse.nrSeeds()) + " seeds", VERBOSITY_t::ESSENTIAL, argparse.v());
             CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.minprop(), argparse.base(),
-                                 argparse.forceAMPDEL(), cn, fixedMatrix, 2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1,
+                                 argparse.forceAMPDEL(), cn, fixedMatrix, sampleClonal, purities,
+                                 2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1,
                                  argparse.s(), argparse.m(), argparse.v());
             cd.run();
 
@@ -140,6 +180,7 @@ int main(int argc, char** argv)
             BCN = cd.getBCN();
             U = cd.getU();
             fixedMatrix.verify(ACN, BCN, U);
+            sampleClonal.verify(ACN, BCN, U, purities);
 
         } else {
             throw "Unknown solving mode!";

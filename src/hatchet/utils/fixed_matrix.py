@@ -295,6 +295,7 @@ def validate_fixed_matrix(
     mu,
     copy_numbers=None,
     purities=None,
+    sample_clonal=None,
     ampdel=True,
     base=None,
     cnstates=None,
@@ -413,6 +414,103 @@ def validate_fixed_matrix(
                     entry,
                     f'fixed normal proportion {entry.value} conflicts with purity {purity}; expected {expected}',
                 )
+
+    if sample_clonal is not None:
+        if purities is None or len(purities) != len(fixed_matrix.sample_ids):
+            raise FixedMatrixFormatError(
+                f'{fixed_matrix.source}: sample-clonal validation requires one purity per sample'
+            )
+
+        states_by_sample = {
+            sample_index: {
+                entry.cluster_index: (entry.cn_a, entry.cn_b)
+                for entry in sample_clonal.entries_for_sample(sample_index)
+            }
+            for sample_index in range(len(fixed_matrix.sample_ids))
+        }
+
+        def clone_compatible(clone_index, sample_index):
+            for cluster_index, state in states_by_sample[sample_index].items():
+                entry_a = values.get(('A', cluster_index, clone_index))
+                entry_b = values.get(('B', cluster_index, clone_index))
+                if entry_a is not None and entry_a.value != state[0]:
+                    return False
+                if entry_b is not None and entry_b.value != state[1]:
+                    return False
+            return True
+
+        fixed_positive_samples = {clone_index: [] for clone_index in range(1, fixed_matrix.clones)}
+        for sample_index, sample_id in enumerate(fixed_matrix.sample_ids):
+            tumor_entries = [
+                values[('U', clone_index, sample_index)]
+                for clone_index in range(1, fixed_matrix.clones)
+                if ('U', clone_index, sample_index) in values
+            ]
+            fixed_tumor_sum = sum(entry.value for entry in tumor_entries)
+            purity = purities[sample_index]
+            if fixed_tumor_sum > purity + tol:
+                error_entry = max(tumor_entries, key=lambda entry: entry.source_entry.line_number)
+                raise _entry_error(
+                    fixed_matrix,
+                    error_entry,
+                    f'fixed tumor proportions for sample {sample_id!r} sum to {fixed_tumor_sum}, '
+                    f'which exceeds sample-clonal purity {purity}',
+                )
+
+            for entry in tumor_entries:
+                if entry.value <= tol:
+                    continue
+                if not clone_compatible(entry.row_index, sample_index):
+                    raise _entry_error(
+                        fixed_matrix,
+                        entry,
+                        f'fixed-positive {entry.source_entry.row} is incompatible with sample-clonal states '
+                        f'for sample {sample_id!r}',
+                    )
+                fixed_positive_samples[entry.row_index].append(sample_index)
+
+            fixed_clones = {entry.row_index for entry in tumor_entries}
+            free_compatible = [
+                clone_index
+                for clone_index in range(1, fixed_matrix.clones)
+                if clone_index not in fixed_clones and clone_compatible(clone_index, sample_index)
+            ]
+            residual = purity - fixed_tumor_sum
+            if residual > tol and not free_compatible:
+                error_entry = max(tumor_entries, key=lambda entry: entry.source_entry.line_number, default=None)
+                if error_entry is None:
+                    raise FixedMatrixFormatError(
+                        f'{fixed_matrix.source}: no tumor clone is eligible for remaining sample-clonal purity '
+                        f'{residual} in sample {sample_id!r}'
+                    )
+                raise _entry_error(
+                    fixed_matrix,
+                    error_entry,
+                    f'no tumor clone is eligible for remaining sample-clonal purity {residual} '
+                    f'in sample {sample_id!r}',
+                )
+            if residual > tol and mu is not None and mu > 0 and residual < mu - tol:
+                error_entry = max(tumor_entries, key=lambda entry: entry.source_entry.line_number, default=None)
+                message = f'remaining sample-clonal purity {residual} for sample {sample_id!r} is below minprop {mu}'
+                if error_entry is None:
+                    raise FixedMatrixFormatError(f'{fixed_matrix.source}: {message}')
+                raise _entry_error(fixed_matrix, error_entry, message)
+
+        for clone_index, sample_indices in fixed_positive_samples.items():
+            for left_index, left_sample in enumerate(sample_indices):
+                for right_sample in sample_indices[left_index + 1 :]:
+                    shared_clusters = set(states_by_sample[left_sample]).intersection(states_by_sample[right_sample])
+                    if any(
+                        states_by_sample[left_sample][cluster] != states_by_sample[right_sample][cluster]
+                        for cluster in shared_clusters
+                    ):
+                        entry = values[('U', clone_index, right_sample)]
+                        raise _entry_error(
+                            fixed_matrix,
+                            entry,
+                            f'fixed-positive {entry.source_entry.row} is assigned to samples with incompatible '
+                            f'sample-clonal states',
+                        )
 
     if ampdel:
         for cluster_index, cluster_id in enumerate(fixed_matrix.cluster_ids):

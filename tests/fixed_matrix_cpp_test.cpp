@@ -4,7 +4,7 @@
 
 int main(int argc, char** argv)
 {
-    if(argc != 2 && argc != 3)
+    if(argc < 2 || argc > 4)
     {
         return 2;
     }
@@ -27,7 +27,27 @@ int main(int argc, char** argv)
         FixedMatrix fixed = FixedMatrix::read(argv[1], clones, clusters, samples);
         DoubleArray weights(3, 1.0);
         CNMap copyNumbers;
-        fixed.validate(6, 0.03, 1, false, -1, copyNumbers, weights);
+        int base = 1;
+        bool ampdel = false;
+        int cnstates = -1;
+        if(argc == 4)
+        {
+            const std::string scenario(argv[3]);
+            if(scenario == "clonal")
+            {
+                copyNumbers[0] = CNState(1, 1);
+            }
+            else if(scenario == "ampdel")
+            {
+                base = 2;
+                ampdel = true;
+            }
+            else if(scenario == "cnstates")
+            {
+                cnstates = 1;
+            }
+        }
+        fixed.validate(6, 0.03, base, ampdel, cnstates, copyNumbers, weights);
 
         IntMatrix A(3, IntArray(clones, 0));
         IntMatrix B(3, IntArray(clones, 0));

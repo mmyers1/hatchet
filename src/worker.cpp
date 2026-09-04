@@ -14,6 +14,8 @@ Worker::Worker(const DoubleMatrix& FA,
                const bool ampdel,
                const CNMap& cn,
                const FixedMatrix& fixedMatrix,
+               const SampleClonal& sampleClonal,
+               const DoubleArray& purities,
                const int iterConvergence,
                const int maxIter,
                const int timeLimit,
@@ -35,6 +37,8 @@ Worker::Worker(const DoubleMatrix& FA,
     , _ampdel(ampdel)
     , _cn(cn)
     , _fixedMatrix(fixedMatrix)
+    , _sampleClonal(sampleClonal)
+    , _purities(purities)
     , _iterConvergence(iterConvergence)
     , _maxIter(maxIter)
     , _timeLimit(timeLimit)
@@ -66,14 +70,18 @@ double Worker::solve()
     while((iter_convergence < _iterConvergence) && (iter < _maxIter))
     {
         g_mutex.lock();
-        IlpSubset carch(_n, _m, _k, _cmax, _d, _mu, _base, _ampdel, _cn, _FA, _FB, _bins, _fixedMatrix, _v);
+        IlpSubset carch(_n, _m, _k, _cmax, _d, _mu, _base, _ampdel, _cn, _FA, _FB, _bins, _fixedMatrix,
+                   _sampleClonal, _purities, _v);
         g_mutex.unlock();
 
         carch.fixU(_allU.empty() ? _M0 : _allU.back());
         carch.init();
         carch.hotStart(hotstart.first, hotstart.second);
         bool status = carch.solve(_timeLimit, _memoryLimit, _nrThreads);
-        assert(status);
+        if(!status)
+        {
+            return std::numeric_limits<double>::infinity();
+        }
 
         _allObjC.push_back(carch.getObjs()[0]);
         _allCA.push_back(carch.getACNs()[0]);
@@ -91,13 +99,17 @@ double Worker::solve()
         }
 
         g_mutex.lock();
-        IlpSubset uarch(_n, _m, _k, _cmax, _d, _mu, _base, _ampdel, _cn, _FA, _FB, _bins, _fixedMatrix, _v);
+        IlpSubset uarch(_n, _m, _k, _cmax, _d, _mu, _base, _ampdel, _cn, _FA, _FB, _bins, _fixedMatrix,
+                   _sampleClonal, _purities, _v);
         g_mutex.unlock();
 
         uarch.fixC(_allCA.back(), _allCB.back());
         uarch.init();
         status = uarch.solve(_timeLimit, _memoryLimit, _nrThreads);
-        assert(status);
+        if(!status)
+        {
+            return std::numeric_limits<double>::infinity();
+        }
 
         _allObjU.push_back(uarch.getObjs()[0]);
         _allU.push_back(uarch.getUs()[0]);

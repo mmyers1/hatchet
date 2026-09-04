@@ -4,12 +4,19 @@ import argparse
 import shutil
 import subprocess
 import shlex
+import tempfile
 from collections import Counter
 
 import hatchet
 from hatchet import config, __version__
 from hatchet.utils.Supporting import ensure, log, error
 from hatchet.utils.fixed_matrix import parse_fixed_matrix, resolve_fixed_matrix
+from hatchet.utils.sample_clonal import (
+    parse_sample_clonal_file,
+    parse_sample_clonal_inline,
+    resolve_sample_clonal,
+    write_sample_clonal_file,
+)
 from hatchet.utils.solve import solve
 from hatchet.utils.solve.utils import segmentation
 
@@ -78,6 +85,20 @@ def parsing_arguments(args=None):
         required=False,
         default=config.compute_cn.clonal,
         help='Clonal clusters to fix for tetraploid (default: automatically inferred)',
+    )
+    parser.add_argument(
+        '--sample-clonal',
+        type=str,
+        required=False,
+        default=config.compute_cn.sampleclonal,
+        help='Two sample-clonal cluster states per sample in inline form (default: none)',
+    )
+    parser.add_argument(
+        '--sample-clonal-file',
+        type=str,
+        required=False,
+        default=config.compute_cn.sampleclonalfile,
+        help='Path to a versioned TSV file containing two sample-clonal cluster states per sample (default: none)',
     )
     parser.add_argument(
         '-d',
@@ -326,6 +347,8 @@ def parsing_arguments(args=None):
         raise ValueError(error('BBC file {} not found!'.format(bbc)))
     if args.fixed_matrix is not None and not os.path.isfile(args.fixed_matrix):
         raise ValueError(error('Fixed-matrix file {} not found!'.format(args.fixed_matrix)))
+    if args.sample_clonal_file is not None and not os.path.isfile(args.sample_clonal_file):
+        raise ValueError(error('Sample-clonal file {} not found!'.format(args.sample_clonal_file)))
 
     if args.clones.isdigit():
         ln = int(args.clones)
@@ -391,6 +414,14 @@ def parsing_arguments(args=None):
     if args.diploid and args.tetraploid:
         raise ValueError(error('Diploid and tetraploid cannot be forced at the same time!'))
 
+    has_sample_clonal = args.sample_clonal is not None or args.sample_clonal_file is not None
+    if args.sample_clonal is not None and args.sample_clonal_file is not None:
+        raise ValueError(error('--sample-clonal and --sample-clonal-file cannot be used together!'))
+    if has_sample_clonal and args.clonal is not None:
+        raise ValueError(error('Sample-clonal input cannot be used with --clonal!'))
+    if has_sample_clonal and not (args.diploid or args.tetraploid):
+        raise ValueError(error('Sample-clonal input requires either --diploid or --tetraploid!'))
+
     if not os.path.isdir(args.runningdir):
         raise ValueError(error('Running directory not found!'))
     if not 0 <= args.verbosity <= 3:
@@ -412,6 +443,8 @@ def parsing_arguments(args=None):
         'un': un,
         'fixedmatrix': args.fixed_matrix,
         'clonal': args.clonal,
+        'sampleclonal': args.sample_clonal,
+        'sampleclonalfile': args.sample_clonal_file,
         'ampdel': not args.noampdel,
         'd': args.cnstates,
         'eD': args.diploidcmax,
@@ -468,6 +501,17 @@ def load_fixed_matrix_entries(args, cluster_ids, sample_ids):
     return fixed_matrix
 
 
+def load_sample_clonal_entries(args, cluster_ids, sample_ids):
+    if args['sampleclonal'] is not None:
+        sample_clonal = parse_sample_clonal_inline(args['sampleclonal'])
+    elif args['sampleclonalfile'] is not None:
+        sample_clonal = parse_sample_clonal_file(args['sampleclonalfile'])
+    else:
+        return None
+
+    return resolve_sample_clonal(sample_clonal, cluster_ids, sample_ids)
+
+
 def main(args=None):
     sys.stderr.write(log('# Checking and parsing input arguments\n'))
     args = parsing_arguments(args)
@@ -491,6 +535,10 @@ def main(args=None):
     if args['fixedmatrix'] is not None:
         sys.stderr.write(log('# Reading and validating fixed matrix entries\n'))
     args['fixed'] = load_fixed_matrix_entries(args, seg.keys(), samples)
+
+    if args['sampleclonal'] is not None or args['sampleclonalfile'] is not None:
+        sys.stderr.write(log('# Reading and validating sample-clonal entries\n'))
+    args['sample_clonal_entries'] = load_sample_clonal_entries(args, seg.keys(), samples)
 
     sys.stderr.write(log('# Computing the cluster sizes\n'))
     size = computeSizes(seg=seg, bbc=bbc, samples=samples)
@@ -585,7 +633,10 @@ def main(args=None):
     elif args['diploid']:
         sys.stderr.write(log('# Running diploid\n'))
 
-        if args['clonal'] is not None:
+        if args['sample_clonal_entries'] is not None:
+            neutral = None
+            clonal = None
+        elif args['clonal'] is not None:
             clonal = parse_clonal_diploid(args['clonal'])
             neutral = None
         else:
@@ -611,7 +662,10 @@ def main(args=None):
         )
 
     elif args['tetraploid']:
-        if args['clonal'] is None:
+        if args['sample_clonal_entries'] is not None:
+            clonal = None
+            scale = None
+        elif args['clonal'] is None:
             sys.stderr.write(log('# Finding clonal clusters and their copy numbers\n'))
             neutral = findNeutralCluster(
                 seg=fseg,
@@ -642,7 +696,7 @@ def main(args=None):
                 v=args['v'],
             )
 
-        if len(clonal) > 0:
+        if args['sample_clonal_entries'] is not None or len(clonal) > 0:
             sys.stderr.write(log('# Running tetraploid\n'))
             tetraploidObjs = runningTetraploid(clonal=clonal, scale=scale, size=size, args=args)
 
@@ -975,13 +1029,18 @@ def findNeutralCluster(seg, size, td, samples, v):
 
 def runningDiploid(neutral, args, clonal=None):
     results = []
-    if clonal is not None:
+    args['base'] = 1
+    if args['sample_clonal_entries'] is not None:
+        args['c'] = None
+    elif clonal is not None:
         args['c'] = clonal
     else:
         args['c'] = '{}:1:1'.format(neutral)
 
     args['e'] = args['eD']
-    basecmd = makeBaseCMD(args, args['eD']) + ' -c ' + args['c']
+    basecmd = makeBaseCMD(args, args['eD'])
+    if args['c'] is not None:
+        basecmd += ' -c ' + args['c']
 
     for n in range(args['ln'], args['un'] + 1):
         if args['v'] >= 2:
@@ -1246,14 +1305,23 @@ def parseClonalClusters(clonal, fseg, size, samples, v):
 
 def runningTetraploid(clonal, scale, size, args):
     results = []
-    cn = '{}:{}:{}'.format(scale[0], clonal[scale[0]][0], clonal[scale[0]][1])
-    cn += ',{}:{}:{}'.format(scale[1], clonal[scale[1]][0], clonal[scale[1]][1])
-    if len(clonal) > 2:
-        cn = cn + ',' + ','.join(['{}:{}:{}'.format(s, clonal[s][0], clonal[s][1]) for s in clonal if s not in scale])
-
-    args['c'] = cn
+    args['base'] = 2
+    if args['sample_clonal_entries'] is not None:
+        args['c'] = None
+    else:
+        cn = '{}:{}:{}'.format(scale[0], clonal[scale[0]][0], clonal[scale[0]][1])
+        cn += ',{}:{}:{}'.format(scale[1], clonal[scale[1]][0], clonal[scale[1]][1])
+        if len(clonal) > 2:
+            cn = (
+                cn
+                + ','
+                + ','.join(['{}:{}:{}'.format(s, clonal[s][0], clonal[s][1]) for s in clonal if s not in scale])
+            )
+        args['c'] = cn
     args['e'] = args['eT']
-    basecmd = makeBaseCMD(args, args['eT']) + ' -c {}'.format(cn)
+    basecmd = makeBaseCMD(args, args['eT'])
+    if args['c'] is not None:
+        basecmd += ' -c {}'.format(args['c'])
 
     for n in range(args['ln'], args['un'] + 1):
         if args['v'] >= 2:
@@ -1271,7 +1339,7 @@ def execute_python(solver, args, n, outprefix):
 
     _mode = ('both', 'ilp', 'cd')[args['M']]
 
-    obj, cA, cB, u, cluster_ids, sample_ids = solve(
+    result = solve(
         solver=solver,
         clonal=args['c'],
         bbc_file=args['bbc'],
@@ -1291,7 +1359,12 @@ def execute_python(solver, args, n, outprefix):
         binwise=args['binwise'],
         purities=args['purities'],
         fixed_matrix=args['fixed'],
+        base=args['base'],
+        sample_clonal=args['sample_clonal_entries'],
     )
+    if result is None:
+        raise RuntimeError('No feasible solution found for the requested constraints')
+    obj, cA, cB, u, cluster_ids, sample_ids = result
 
     segmentation(
         cA,
@@ -1315,68 +1388,88 @@ def execute(args, basecmd, n, outprefix):
         return execute_python(config.compute_cn.solver, args, n, outprefix)
     progressbar = ProgressBar(total=args['p'], length=min(50, args['p']), verbose=False)
     cmd = basecmd + ' -n {} -o {}'.format(n, outprefix)
+    sample_clonal_path = None
+    if args.get('sample_clonal_entries') is not None:
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            suffix='.sample-clonal.tsv',
+            prefix='hatchet-',
+            dir=args['x'],
+            delete=False,
+        ) as temporary:
+            sample_clonal_path = temporary.name
+        write_sample_clonal_file(args['sample_clonal_entries'], sample_clonal_path)
+        cmd += ' -S {} -b {}'.format(shlex.quote(sample_clonal_path), args['base'])
     if args['v'] >= 3:
         sys.stderr.write(debug('### Running command: {}\n'.format(cmd)))
 
     FNULL = open(os.devnull, 'w')
-    process = subprocess.Popen(
-        shlex.split(cmd),
-        stdout=FNULL,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-    )
-    buffer = []
+    try:
+        process = subprocess.Popen(
+            shlex.split(cmd),
+            stdout=FNULL,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+        buffer = []
 
-    if args['v'] >= 2:
-        while True:
-            nextline = process.stderr.readline().strip()
-            buffer.append(nextline)
-            if ';' in nextline:
-                progressbar.progress(
-                    advance=True,
-                    msg='Obj value {}'.format(float(nextline.split()[-2][:-1])),
-                )
-            if not nextline and process.poll() is not None:
-                break
+        if args['v'] >= 2:
+            while True:
+                nextline = process.stderr.readline().strip()
+                buffer.append(nextline)
+                if ';' in nextline:
+                    progressbar.progress(
+                        advance=True,
+                        msg='Obj value {}'.format(float(nextline.split()[-2][:-1])),
+                    )
+                if not nextline and process.poll() is not None:
+                    break
 
-    stdout, stderr = process.communicate()
-    if stderr:
-        buffer.extend(stderr.splitlines())
-    exitcode = process.returncode
-    if exitcode == 0:
-        obj = -1
-        for line in reversed(buffer):
-            if 'Final objective' in line:
-                for e in line.split():
-                    if isfloat(e):
-                        obj = float(e)
-                break
-        if obj >= 0:
-            if args['v'] >= 1:
-                sys.stderr.write(info('# Best objective found with {} clones: {}\n'.format(n, obj)))
-        else:
-            raise RuntimeError(
-                error(
-                    (
-                        'Failed to parse the output of the following command because the final objective was not '
-                        'found: \n\t\t{cmd}\n'
+        stdout, stderr = process.communicate()
+        if stderr:
+            buffer.extend(stderr.splitlines())
+        exitcode = process.returncode
+        if exitcode == 0:
+            obj = -1
+            for line in reversed(buffer):
+                if 'Final objective' in line:
+                    for e in line.split():
+                        if isfloat(e):
+                            obj = float(e)
+                    break
+            if obj >= 0:
+                if args['v'] >= 1:
+                    sys.stderr.write(info('# Best objective found with {} clones: {}\n'.format(n, obj)))
+            else:
+                raise RuntimeError(
+                    error(
+                        (
+                            'Failed to parse the output of the following command because the final objective was not '
+                            'found: \n\t\t{cmd}\n'
+                        )
                     )
                 )
-            )
-    else:
-        if any('GRBException' in line for line in buffer):
-            msg = (
-                '\nYou likely have a licensing issue with Gurobi. Please run `hatchet check-solver` to ensure that '
-                'the solver is working correctly.'
-            )
         else:
-            msg = (
-                '\nUnexpected error during solve. Please run `hatchet check-solver` to ensure that the solver is '
-                'working correctly.'
-            )
-        raise RuntimeError(error('The following command failed: \n\t\t{}\nwith {}\n{}'.format(cmd, buffer, msg)))
+            if any('GRBException' in line for line in buffer):
+                msg = (
+                    '\nYou likely have a licensing issue with Gurobi. Please run `hatchet check-solver` to ensure that '
+                    'the solver is working correctly.'
+                )
+            else:
+                msg = (
+                    '\nUnexpected error during solve. Please run `hatchet check-solver` to ensure that the solver is '
+                    'working correctly.'
+                )
+            raise RuntimeError(error('The following command failed: \n\t\t{}\nwith {}\n{}'.format(cmd, buffer, msg)))
 
-    return obj
+        return obj
+    finally:
+        FNULL.close()
+        if sample_clonal_path is not None:
+            try:
+                os.remove(sample_clonal_path)
+            except FileNotFoundError:
+                pass
 
 
 def select(diploid, tetraploid, v, rundir, g, limit):

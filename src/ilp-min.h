@@ -3,8 +3,13 @@
 
 #include "utils.h"
 #include "fixed_matrix.h"
-#include "gurobi-utils.h"
+#include "sample_clonal.h"
 #include <gurobi_c++.h>
+
+typedef std::vector<GRBVar> VarArray;
+typedef std::vector<VarArray> VarMatrix;
+typedef std::vector<VarMatrix> Var3Matrix;
+typedef std::vector<Var3Matrix> Var4Matrix;
 
 class IlpSubset
 {
@@ -24,6 +29,8 @@ public:
               const DoubleMatrix& FB,
               const DoubleArray& w,
               const FixedMatrix& fixedMatrix,
+              const SampleClonal& sampleClonal,
+              const DoubleArray& purities,
               const VERBOSITY_t v);
 
 
@@ -113,6 +120,8 @@ private:
     void fixGivenCN();
     /// Add sparse hard constraints supplied by the user
     void fixMatrixEntries();
+    /// Enforce per-sample clonal states and derived purities
+    void fixSampleClonal();
     /// Build objective
     void buildObjective();
     /// Add the constraint to avoid current solution and to find the next one
@@ -156,6 +165,10 @@ private:
     const DoubleArray& _w;
     /// Sparse user-specified A, B, and U entries
     const FixedMatrix& _fixedMatrix;
+    /// Per-sample clonal states
+    const SampleClonal& _sampleClonal;
+    /// Per-sample purities derived from sample-clonal states
+    const DoubleArray& _purities;
     ///
     const VERBOSITY_t _v;
     ///

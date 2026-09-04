@@ -13,6 +13,8 @@ CoordinateDescent::CoordinateDescent(const DoubleMatrix& FA,
                                      const bool ampdel,
                                      const CNMap& cn,
                                      const FixedMatrix& fixedMatrix,
+                                     const SampleClonal& sampleClonal,
+                                     const DoubleArray& purities,
                                      const unsigned int iterConvergence,
                                      const unsigned int maxIter,
                                      const int nrSeeds,
@@ -34,6 +36,8 @@ CoordinateDescent::CoordinateDescent(const DoubleMatrix& FA,
     , _ampdel(ampdel)
     , _cn(cn)
     , _fixedMatrix(fixedMatrix)
+    , _sampleClonal(sampleClonal)
+    , _purities(purities)
     , _iterConvergence(iterConvergence)
     , _maxIter(maxIter)
     , _nrSeeds(nrSeeds)
@@ -91,12 +95,21 @@ void CoordinateDescent::run()
     }
 
     log("}", VERBOSITY_t::VERBOSE, _v);
+    if(_objs.empty())
+    {
+        throw "Not a single feasible sample-clonal coordinate-descent seed was found!";
+    }
     _best = std::distance(_objs.begin(), std::min_element(_objs.begin(), _objs.end()));
 }
 
 
 DoubleMatrix CoordinateDescent::buildRandomU()
 {
+    if(!_sampleClonal.empty())
+    {
+        return buildSampleClonalU();
+    }
+
     DoubleMatrix U;
     for(unsigned int p = 0; p < _k; ++p)
     {
@@ -109,6 +122,152 @@ DoubleMatrix CoordinateDescent::buildRandomU()
     _fixedMatrix.conditionProportions(T, _mu);
     log("SEED " + std::to_string(_seeds.size()) + ":\n" + toString(T), VERBOSITY_t::DEBUGGING, _v);
     return T;
+}
+
+
+DoubleMatrix CoordinateDescent::buildSampleClonalU()
+{
+    DoubleMatrix U(_n, DoubleArray(_k, 0.0));
+    std::vector<std::set<int> > fixedClones(_k);
+    std::vector<std::set<int> > assignedSamples(_n);
+    for(int sample = 0; sample < _k; ++sample)
+    {
+        U[0][sample] = 1.0 - _purities[sample];
+    }
+
+    const std::vector<FixedMatrixEntry>& fixedEntries = _fixedMatrix.entries();
+    for(std::vector<FixedMatrixEntry>::const_iterator entry = fixedEntries.begin(); entry != fixedEntries.end(); ++entry)
+    {
+        if(entry->matrix != MATRIX_U)
+        {
+            continue;
+        }
+        if(entry->row == 0)
+        {
+            if(std::fabs(entry->value - U[0][entry->column]) > TOL)
+            {
+                throw "Fixed normal proportion conflicts with sample-clonal purity";
+            }
+            continue;
+        }
+        fixedClones[entry->column].insert(entry->row);
+        U[entry->row][entry->column] = entry->value;
+        if(entry->value > TOL)
+        {
+            assignedSamples[entry->row].insert(entry->column);
+        }
+    }
+
+    const std::function<bool(int, int)> cloneCompatible =
+        [this, &fixedEntries](const int clone, const int sample)
+        {
+            const std::vector<SampleClonalEntry> entries = _sampleClonal.entriesForSample(sample);
+            for(std::vector<SampleClonalEntry>::const_iterator required = entries.begin();
+                required != entries.end(); ++required)
+            {
+                for(std::vector<FixedMatrixEntry>::const_iterator fixed = fixedEntries.begin();
+                    fixed != fixedEntries.end(); ++fixed)
+                {
+                    if(fixed->row != required->cluster || fixed->column != clone)
+                    {
+                        continue;
+                    }
+                    if((fixed->matrix == MATRIX_A && static_cast<int>(fixed->value) != required->cnA) ||
+                       (fixed->matrix == MATRIX_B && static_cast<int>(fixed->value) != required->cnB))
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        };
+
+    DoubleArray residual(_k, 0.0);
+    std::vector<int> sampleOrder;
+    for(int sample = 0; sample < _k; ++sample)
+    {
+        double fixedTumor = 0.0;
+        for(int clone = 1; clone < _n; ++clone)
+        {
+            fixedTumor += U[clone][sample];
+        }
+        residual[sample] = _purities[sample] - fixedTumor;
+        if(residual[sample] < -TOL)
+        {
+            throw "Fixed tumor proportions exceed sample-clonal purity";
+        }
+        if(residual[sample] > TOL)
+        {
+            if(_mu > 0.0 && residual[sample] < _mu - TOL)
+            {
+                throw "Remaining sample-clonal purity is below the minimum clone proportion";
+            }
+            sampleOrder.push_back(sample);
+        }
+    }
+    std::shuffle(sampleOrder.begin(), sampleOrder.end(), g_rng);
+    std::sort(sampleOrder.begin(), sampleOrder.end(),
+              [this](const int left, const int right)
+              {
+                  int leftConflicts = 0;
+                  int rightConflicts = 0;
+                  for(int sample = 0; sample < _k; ++sample)
+                  {
+                      leftConflicts += _sampleClonal.samplesCompatible(left, sample) ? 0 : 1;
+                      rightConflicts += _sampleClonal.samplesCompatible(right, sample) ? 0 : 1;
+                  }
+                  return leftConflicts > rightConflicts;
+              });
+
+    std::map<int, int> assignment;
+    std::function<bool(std::size_t)> assignSample;
+    assignSample =
+        [this, &sampleOrder, &fixedClones, &assignedSamples, &assignment, &cloneCompatible, &assignSample]
+        (const std::size_t position) -> bool
+        {
+            if(position == sampleOrder.size())
+            {
+                return true;
+            }
+            const int sample = sampleOrder[position];
+            IntArray candidates;
+            for(int clone = 1; clone < _n; ++clone)
+            {
+                bool compatible = fixedClones[sample].count(clone) == 0 && cloneCompatible(clone, sample);
+                for(std::set<int>::const_iterator assigned = assignedSamples[clone].begin();
+                    compatible && assigned != assignedSamples[clone].end(); ++assigned)
+                {
+                    compatible = _sampleClonal.samplesCompatible(sample, *assigned);
+                }
+                if(compatible)
+                {
+                    candidates.push_back(clone);
+                }
+            }
+            std::shuffle(candidates.begin(), candidates.end(), g_rng);
+            for(IntArray::const_iterator clone = candidates.begin(); clone != candidates.end(); ++clone)
+            {
+                assignedSamples[*clone].insert(sample);
+                assignment[sample] = *clone;
+                if(assignSample(position + 1))
+                {
+                    return true;
+                }
+                assignedSamples[*clone].erase(sample);
+                assignment.erase(sample);
+            }
+            return false;
+        };
+
+    if(!assignSample(0))
+    {
+        throw "No feasible tumor-clone assignment exists for the sample-clonal states";
+    }
+    for(std::map<int, int>::const_iterator assigned = assignment.begin(); assigned != assignment.end(); ++assigned)
+    {
+        U[assigned->second][assigned->first] = residual[assigned->first];
+    }
+    return U;
 }
 
 
@@ -175,8 +334,14 @@ void CoordinateDescent::runWorker()
         std::this_thread::sleep_for(std::chrono::seconds(2));
         if(seed > -1) {
             Worker worker(_FA, _FB, _bins, _m, _k, _n, _cmax, _d, _mu, _base, _ampdel, _cn, _fixedMatrix,
+                          _sampleClonal, _purities,
                           _iterConvergence, _maxIter, _timeLimit, _memoryLimit, _nrILPthreads, _seeds[seed], seed, _v);
             double obj = worker.solve();
+
+            if(!std::isfinite(obj))
+            {
+                continue;
+            }
 
             {
                 std::lock_guard<std::mutex> lock(_mutexResults);

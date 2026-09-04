@@ -12,7 +12,7 @@ from hatchet.utils.solve import solver_available
 
 this_dir = os.path.dirname(__file__)
 DATA_FOLDER = os.path.join(this_dir, 'data', 'fw')
-SOLVE = os.path.join(os.path.dirname(hatchet.__file__), 'solve')
+SOLVE = os.getenv('HATCHET_TEST_CPP_SOLVER', os.path.join(os.path.dirname(hatchet.__file__), 'solve'))
 FIXED_MATRIX_SCENARIOS = (
     pytest.param(
         os.path.join(this_dir, 'data', 'fw', 'bulk'),
@@ -139,8 +139,9 @@ def run_fixed_matrix_solve(output_folder, input_prefix, fixed_path, solver, mode
     old_value = config.compute_cn.solver
     config.compute_cn.solver = solver
     try:
-        main(
-            args=[
+        args = [SOLVE] if solver == 'cpp' else []
+        args.extend(
+            [
                 '-x',
                 str(output_folder),
                 '-i',
@@ -171,6 +172,7 @@ def run_fixed_matrix_solve(output_folder, input_prefix, fixed_path, solver, mode
                 fixed_path,
             ]
         )
+        main(args=args)
     finally:
         config.compute_cn.solver = old_value
 
@@ -233,6 +235,7 @@ def test_solve_command_cpp(output_folder):
 
     main(
         args=[
+            SOLVE,
             '-x',
             os.path.join(output_folder),
             '-i',
