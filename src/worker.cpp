@@ -10,6 +10,7 @@ Worker::Worker(const DoubleMatrix& FA,
                const int cmax,
                const int d,
                const double mu,
+               const double maxHomdelSize,
                const int base,
                const bool ampdel,
                const CNMap& cn,
@@ -33,6 +34,7 @@ Worker::Worker(const DoubleMatrix& FA,
     , _cmax(cmax)
     , _d(d)
     , _mu(mu)
+    , _maxHomdelSize(maxHomdelSize)
     , _base(base)
     , _ampdel(ampdel)
     , _cn(cn)
@@ -70,7 +72,7 @@ double Worker::solve()
     while((iter_convergence < _iterConvergence) && (iter < _maxIter))
     {
         g_mutex.lock();
-        IlpSubset carch(_n, _m, _k, _cmax, _d, _mu, _base, _ampdel, _cn, _FA, _FB, _bins, _fixedMatrix,
+        IlpSubset carch(_n, _m, _k, _cmax, _d, _mu, _maxHomdelSize, _base, _ampdel, _cn, _FA, _FB, _bins, _fixedMatrix,
                    _sampleClonal, _purities, _v);
         g_mutex.unlock();
 
@@ -99,7 +101,7 @@ double Worker::solve()
         }
 
         g_mutex.lock();
-        IlpSubset uarch(_n, _m, _k, _cmax, _d, _mu, _base, _ampdel, _cn, _FA, _FB, _bins, _fixedMatrix,
+        IlpSubset uarch(_n, _m, _k, _cmax, _d, _mu, _maxHomdelSize, _base, _ampdel, _cn, _FA, _FB, _bins, _fixedMatrix,
                    _sampleClonal, _purities, _v);
         g_mutex.unlock();
 

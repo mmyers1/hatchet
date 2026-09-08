@@ -70,6 +70,11 @@ public:
         return _u;
     }
 
+    double maxHomdelSize() const
+    {
+        return _maxHomdelSize;
+    }
+
     int m() const
     {
         return _m;
@@ -165,6 +170,8 @@ private:
     int _p;
     ///
     double _u;
+    /// Maximum cluster-weight fraction that can have a homozygous deletion
+    double _maxHomdelSize;
     /// Maximum resident memory
     int _m;
     /// Time limit

@@ -23,6 +23,7 @@ class ILPSubset:
         fixed_matrix=None,
         base=None,
         sample_clonal=None,
+        max_homdel_size=0.005,
     ):
 
         # Each ILPSubset maintains its own data, so make a deep-copy of passed-in DataFrames
@@ -49,6 +50,7 @@ class ILPSubset:
         self.fixed_matrix = fixed_matrix
         self._base = base
         self.sample_clonal = sample_clonal
+        self.max_homdel_size = max_homdel_size
 
         self.tol = 0.001
 
@@ -82,6 +84,7 @@ class ILPSubset:
             fixed_matrix=self.fixed_matrix,
             base=self._base,
             sample_clonal=self.sample_clonal,
+            max_homdel_size=self.max_homdel_size,
         )
 
     def __str__(self):
@@ -353,13 +356,7 @@ class ILPSubset:
                 model.constraints.add(self.cA[_m][0] == 1)
                 model.constraints.add(self.cB[_m][0] == 1)
 
-                cluster_id = self.cluster_ids[_m]
-
-                # if the fraction of the cluster size is larger than or equal to 0.005 in the whole dataset
-                # then its integer copy number cannot have (0,0) copy number
-                if self.w[cluster_id] / sum(self.w) >= 0.005:
-                    for _n in range(1, n):
-                        model.constraints.add(self.cA[_m][_n] + self.cB[_m][_n] >= 1)
+            self.build_homdel_constraints(model)
 
             if ampdel:
                 for _m in range(m):
@@ -454,6 +451,20 @@ class ILPSubset:
 
         if pprint:
             print(str(self))
+
+    def build_homdel_constraints(self, model):
+        model.homdel_constraints = pe.ConstraintList()
+        cluster_weights = [float(self.w[cluster_id]) for cluster_id in self.cluster_ids]
+        total_weight = sum(cluster_weights)
+        if total_weight <= 0:
+            return
+
+        for cluster_index, cluster_weight in enumerate(cluster_weights):
+            if cluster_weight > 0 and cluster_weight / total_weight >= self.max_homdel_size:
+                for clone_index in range(1, self.n):
+                    model.homdel_constraints.add(
+                        self.cA[cluster_index][clone_index] + self.cB[cluster_index][clone_index] >= 1
+                    )
 
     def build_symmetry_breaking(self, model):
         for i in range(1, self.n - 1):
@@ -891,6 +902,8 @@ class ILPSubsetSplit(ILPSubset):
         fixed_matrix=None,
         base=None,
         sample_clonal=None,
+        w=None,
+        max_homdel_size=0.005,
     ):
 
         # Each ILPSubset maintains its own data, so make a deep-copy of passed-in DataFrames
@@ -908,6 +921,11 @@ class ILPSubsetSplit(ILPSubset):
         self.f_b = f_b
         self.cluster_ids = f_a.index
         self.sample_ids = f_a.columns
+        self.w = (
+            w
+            if w is not None
+            else {cluster_id: float(np.sum(self.lengths[cluster_id])) for cluster_id in self.cluster_ids}
+        )
 
         self.n = n
         self.cn_max = cn_max
@@ -919,6 +937,7 @@ class ILPSubsetSplit(ILPSubset):
         self.fixed_matrix = fixed_matrix
         self._base = base
         self.sample_clonal = sample_clonal
+        self.max_homdel_size = max_homdel_size
 
         self.tol = 0.001
 
@@ -954,6 +973,8 @@ class ILPSubsetSplit(ILPSubset):
             fixed_matrix=self.fixed_matrix,
             base=self._base,
             sample_clonal=self.sample_clonal,
+            w=self.w,
+            max_homdel_size=self.max_homdel_size,
         )
 
     def create_model(self, pprint=False):
@@ -1182,6 +1203,8 @@ class ILPSubsetSplit(ILPSubset):
             for _m in range(m):
                 model.constraints.add(self.cA[_m][0] == 1)
                 model.constraints.add(self.cB[_m][0] == 1)
+
+            self.build_homdel_constraints(model)
 
             if ampdel:
                 for _m in range(m):

@@ -6,6 +6,7 @@ IlpSubset::IlpSubset(const int n,
                      const int cmax,
                      const int d,
                      const double mu,
+                     const double maxHomdelSize,
                      const int base,
                      const bool ampdel,
                      const CNMap& cn,
@@ -22,6 +23,7 @@ IlpSubset::IlpSubset(const int n,
     , _cmax(cmax)
     , _d(d)
     , _mu(mu)
+    , _maxHomdelSize(maxHomdelSize)
     , _base(base)
     , _ampdel(ampdel)
     , _cn(cn)
@@ -844,10 +846,18 @@ void IlpSubset::buildConstraints()
 
     if(_mode == MODE_t::FULL || _mode == MODE_t::CARCH)
     {
+        const double totalWeight = std::accumulate(_w.begin(), _w.end(), 0.0);
         for(int s = 0; s < _m; ++s)
         {
             _model.addConstr(_cA[s][0] == 1);
             _model.addConstr(_cB[s][0] == 1);
+            if(totalWeight > 0.0 && _w[s] > 0.0 && _w[s] / totalWeight >= _maxHomdelSize)
+            {
+                for(int i = 1; i < _n; ++i)
+                {
+                    _model.addConstr(_cA[s][i] + _cB[s][i] >= 1);
+                }
+            }
         }
 
         if(_ampdel)

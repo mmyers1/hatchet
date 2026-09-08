@@ -61,7 +61,8 @@ public:
                   const bool ampdel,
                   const int cnstates,
                   const DoubleArray& weights,
-                  const DoubleArray& purities) const;
+                  const DoubleArray& purities,
+                  const double maxHomdelSize) const;
     void verify(const IntMatrix& A,
                 const IntMatrix& B,
                 const DoubleMatrix& U,

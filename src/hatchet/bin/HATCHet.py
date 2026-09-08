@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import shlex
 import tempfile
+import math
 from collections import Counter
 
 import hatchet
@@ -107,6 +108,13 @@ def parsing_arguments(args=None):
         required=False,
         default=config.compute_cn.cnstates,
         help='Maximum number of distinct copy-number states for each segment (default: None, no limit)',
+    )
+    parser.add_argument(
+        '--max-homdel-size',
+        type=float,
+        required=False,
+        default=config.compute_cn.maxhomdelsize,
+        help=('Maximum cluster-size fraction that can have a homozygous deletion ' '(default: 0.005)'),
     )
     parser.add_argument(
         '-eD',
@@ -369,6 +377,8 @@ def parsing_arguments(args=None):
         raise ValueError(
             error('The maximum number of copy-number states should be default None or a positive non-zero integer!')
         )
+    if not math.isfinite(args.max_homdel_size) or args.max_homdel_size < 0.0 or args.max_homdel_size > 1.0:
+        raise ValueError(error('The maximum homozygous-deletion cluster-size fraction must be in [0, 1]!'))
     if args.diploidcmax == 0:
         args.diploidcmax = None
     if args.diploidcmax is not None and args.diploidcmax <= 0:
@@ -447,6 +457,7 @@ def parsing_arguments(args=None):
         'sampleclonalfile': args.sample_clonal_file,
         'ampdel': not args.noampdel,
         'd': args.cnstates,
+        'max_homdel_size': args.max_homdel_size,
         'eD': args.diploidcmax,
         'eT': args.tetraploidcmax,
         'ts': args.minsize,
@@ -1065,6 +1076,7 @@ def makeBaseCMD(args, e):
         basecmd += ' -p {}'.format(args['p'])
     if args['u'] is not None:
         basecmd += ' -u {}'.format(args['u'])
+    basecmd += ' --max-homdel-size {}'.format(args.get('max_homdel_size', 0.005))
     if args['m'] is not None:
         basecmd += ' -m {}'.format(args['m'])
     if args['s'] is not None:
@@ -1361,6 +1373,7 @@ def execute_python(solver, args, n, outprefix):
         fixed_matrix=args['fixed'],
         base=args['base'],
         sample_clonal=args['sample_clonal_entries'],
+        max_homdel_size=args.get('max_homdel_size', 0.005),
     )
     if result is None:
         raise RuntimeError('No feasible solution found for the requested constraints')

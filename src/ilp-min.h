@@ -22,6 +22,7 @@ public:
               const int maxc,
               const int d,
               const double mu,
+              const double maxHomdelSize,
               const int base,
               const bool ampdel,
               const CNMap& cn,
@@ -151,6 +152,8 @@ private:
     const int _d;
     ///
     const double _mu;
+    /// Maximum cluster-weight fraction that can have a homozygous deletion
+    const double _maxHomdelSize;
     ///
     const int _base;
     ///

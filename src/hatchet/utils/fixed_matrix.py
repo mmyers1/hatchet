@@ -301,6 +301,7 @@ def validate_fixed_matrix(
     cnstates=None,
     weights=None,
     tol=0.001,
+    max_homdel_size=0.005,
 ):
     values = _resolved_values(fixed_matrix)
     copy_numbers = _copy_numbers_by_cluster(copy_numbers)
@@ -537,7 +538,8 @@ def validate_fixed_matrix(
         if total_weight > 0:
             for cluster_index, cluster_id in enumerate(fixed_matrix.cluster_ids):
                 cluster_label = str(cluster_id)
-                if weight_map.get(cluster_label, 0) / total_weight < 0.005:
+                cluster_weight = weight_map.get(cluster_label, 0)
+                if cluster_weight <= 0 or cluster_weight / total_weight < max_homdel_size:
                     continue
                 for clone_index in range(1, fixed_matrix.clones):
                     entry_a = values.get(('A', cluster_index, clone_index))

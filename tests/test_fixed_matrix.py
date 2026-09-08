@@ -391,6 +391,26 @@ def test_compute_cn_fixed_matrix_cli_ini_and_environment_precedence(tmp_path, mo
     assert parsed_cli['fixedmatrix'] == str(cli_path)
 
 
+def test_compute_cn_max_homdel_size_cli_config_and_environment(tmp_path, monkeypatch):
+    monkeypatch.setattr(config.compute_cn, 'solver', 'gurobi')
+    input_prefix = _compute_cn_input(tmp_path)
+    monkeypatch.setattr(config.compute_cn, 'maxhomdelsize', 0.01)
+
+    parsed_config = parsing_arguments(['-i', input_prefix, '-x', str(tmp_path), '-n', '3'])
+    assert parsed_config['max_homdel_size'] == pytest.approx(0.01)
+
+    monkeypatch.setenv('HATCHET_COMPUTE_CN_MAXHOMDELSIZE', '0.02')
+    parsed_environment = parsing_arguments(['-i', input_prefix, '-x', str(tmp_path), '-n', '3'])
+    assert parsed_environment['max_homdel_size'] == pytest.approx(0.02)
+
+    parsed_cli = parsing_arguments(['-i', input_prefix, '-x', str(tmp_path), '-n', '3', '--max-homdel-size', '0.03'])
+    assert parsed_cli['max_homdel_size'] == pytest.approx(0.03)
+
+    for invalid in ('-0.01', '1.01', 'nan', 'inf'):
+        with pytest.raises(ValueError, match='homozygous-deletion cluster-size fraction'):
+            parsing_arguments(['-i', input_prefix, '-x', str(tmp_path), '-n', '3', '--max-homdel-size', invalid])
+
+
 def test_load_fixed_matrix_entries_checks_metadata_and_seg_identifiers(tmp_path):
     fixed_path = _write_fixed_matrix(
         tmp_path,
@@ -430,6 +450,7 @@ def test_cpp_command_forwards_fixed_matrix_path():
             'r': None,
             'M': None,
             'fixedmatrix': '/tmp/fixed entries.tsv',
+            'max_homdel_size': 0.02,
         },
         6,
     )
@@ -437,6 +458,8 @@ def test_cpp_command_forwards_fixed_matrix_path():
     fixed_matrix_index = tokens.index('-F')
     assert tokens.count('-F') == 1
     assert tokens[fixed_matrix_index + 1] == '/tmp/fixed entries.tsv'
+    homdel_index = tokens.index('--max-homdel-size')
+    assert tokens[homdel_index + 1] == '0.02'
 
 
 def test_cpp_execute_parses_final_objective_at_quiet_verbosity(monkeypatch, tmp_path):
@@ -603,6 +626,40 @@ def test_cpp_fixed_matrix_validation_matches_documented_constraints(
     assert message in result.stderr
 
 
+def test_cpp_fixed_matrix_homdel_validation_uses_custom_inclusive_cutoff(
+    tmp_path,
+    cpp_fixed_matrix_reader,
+):
+    fixed_path = _write_fixed_matrix(
+        tmp_path,
+        f'{FORMAT_MARKER}\n# clones 3\nmatrix\trow\tcolumn\tvalue\n' 'A\tcluster1\tclone1\t0\nB\tcluster1\tclone1\t0\n',
+    )
+
+    subprocess.run([str(cpp_fixed_matrix_reader), str(fixed_path), '3', 'large-zero', '0.5'], check=True)
+    result = subprocess.run(
+        [str(cpp_fixed_matrix_reader), str(fixed_path), '3', 'large-zero', str(1 / 3)],
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 1
+    assert 'cannot have fixed tumor copy number' in result.stderr
+
+
+def test_cpp_fixed_matrix_homdel_validation_ignores_zero_weight_clusters(
+    tmp_path,
+    cpp_fixed_matrix_reader,
+):
+    fixed_path = _write_fixed_matrix(
+        tmp_path,
+        f'{FORMAT_MARKER}\n# clones 3\nmatrix\trow\tcolumn\tvalue\n' 'A\tcluster1\tclone1\t0\nB\tcluster1\tclone1\t0\n',
+    )
+
+    subprocess.run(
+        [str(cpp_fixed_matrix_reader), str(fixed_path), '3', 'zero-weight', '0'],
+        check=True,
+    )
+
+
 @pytest.mark.parametrize(('_seg_path', 'fixed_path'), BINNING_SCENARIOS)
 def test_cpp_fixed_matrix_parser_accepts_binning_scenario_fixture(
     _seg_path,
@@ -667,12 +724,23 @@ def test_compute_cn_documentation_covers_fixed_matrix_contract():
     assert 'same file is applied to both model-selection branches' in documentation
 
 
-def _build_ilp(n=4, fixed_matrix=None):
+def test_compute_cn_documentation_covers_max_homdel_size_contract():
+    documentation = (Path(__file__).parents[1] / 'docs' / 'source' / 'doc_compute_cn.md').read_text()
+
+    assert '--max-homdel-size' in documentation
+    assert 'maxhomdelsize = 0.005' in documentation
+    assert 'HATCHET_COMPUTE_CN_MAXHOMDELSIZE' in documentation
+    assert 'cutoff is inclusive' in documentation
+    assert 'fraction in `[0, 1]`' in documentation
+
+
+def _build_ilp(n=4, fixed_matrix=None, weights=None, max_homdel_size=0.005):
     cluster_ids = pd.Index(['cluster1', 'cluster2'], name='#ID')
     sample_ids = ['sample1']
     f_a = pd.DataFrame([[1.0], [2.0]], index=cluster_ids, columns=sample_ids)
     f_b = pd.DataFrame([[1.0], [1.0]], index=cluster_ids, columns=sample_ids)
-    weights = pd.Series([1.0, 2.0], index=cluster_ids)
+    if weights is None:
+        weights = pd.Series([1.0, 2.0], index=cluster_ids)
 
     ilp = ILPSubset(
         n=n,
@@ -686,6 +754,7 @@ def _build_ilp(n=4, fixed_matrix=None):
         w=weights,
         purities=None,
         fixed_matrix=fixed_matrix,
+        max_homdel_size=max_homdel_size,
     )
     ilp.create_model()
     return ilp
@@ -720,7 +789,7 @@ def test_python_models_enforce_and_preserve_sparse_fixed_entries(tmp_path):
     assert _fixed_equalities(uarch.model) == {'u_2_1': 0.4}
 
 
-def _build_split_ilp(fixed_matrix):
+def _build_split_ilp(fixed_matrix, weights=None, max_homdel_size=0.005):
     cluster_ids = pd.Index(['cluster1', 'cluster2'], name='#ID')
     sample_ids = ['sample1']
     f_a = pd.DataFrame([[1.0], [2.0]], index=cluster_ids, columns=sample_ids)
@@ -745,6 +814,8 @@ def _build_split_ilp(fixed_matrix):
         binsB=bins_b,
         lengths=lengths,
         fixed_matrix=fixed_matrix,
+        w=weights,
+        max_homdel_size=max_homdel_size,
     )
     ilp.create_model()
     return ilp
@@ -767,6 +838,64 @@ def test_binwise_models_enforce_and_preserve_sparse_fixed_entries(tmp_path):
     uarch.fix_c([[1, 0, 0], [1, 0, 0]], [[1, 0, 0], [1, 0, 0]])
     uarch.create_model()
     assert _fixed_equalities(uarch.model) == {'u_2_1': 0.4}
+
+
+def _constraint_variable_names(constraints):
+    return {
+        frozenset(variable.name for variable in generate_standard_repn(constraint.body).linear_vars)
+        for constraint in constraints.values()
+    }
+
+
+@pytest.mark.parametrize('split', (False, True))
+def test_python_models_apply_custom_homdel_size_in_full_and_carch_modes(split):
+    weights = pd.Series([0.25, 0.75], index=['cluster1', 'cluster2'])
+    if split:
+        ilp = _build_split_ilp(None, weights=weights, max_homdel_size=0.75)
+    else:
+        ilp = _build_ilp(n=3, weights=weights, max_homdel_size=0.75)
+
+    expected = {
+        frozenset(('cA_2_2', 'cB_2_2')),
+        frozenset(('cA_2_3', 'cB_2_3')),
+    }
+    assert _constraint_variable_names(ilp.model.homdel_constraints) == expected
+
+    carch = copy(ilp)
+    carch.fix_u([[0.5], [0.5], [0.0]])
+    carch.create_model()
+    assert carch.max_homdel_size == pytest.approx(0.75)
+    assert _constraint_variable_names(carch.model.homdel_constraints) == expected
+
+
+def test_fixed_matrix_homdel_validation_uses_custom_inclusive_cutoff(tmp_path):
+    fixed = _parse_and_resolve(tmp_path, 'A\tcluster1\tclone1\t0\nB\tcluster1\tclone1\t0\n')
+    options = {
+        'cn_max': 6,
+        'mu': 0.03,
+        'ampdel': False,
+        'weights': {'cluster1': 1, 'cluster2': 99},
+    }
+
+    assert validate_fixed_matrix(fixed, max_homdel_size=0.02, **options) is fixed
+    with pytest.raises(FixedMatrixFormatError, match='cannot have fixed tumor copy number'):
+        validate_fixed_matrix(fixed, max_homdel_size=0.01, **options)
+
+
+def test_fixed_matrix_homdel_validation_ignores_zero_weight_clusters(tmp_path):
+    fixed = _parse_and_resolve(tmp_path, 'A\tcluster1\tclone1\t0\nB\tcluster1\tclone1\t0\n')
+
+    assert (
+        validate_fixed_matrix(
+            fixed,
+            cn_max=6,
+            mu=0.03,
+            ampdel=False,
+            weights={'cluster1': 0, 'cluster2': 1},
+            max_homdel_size=0,
+        )
+        is fixed
+    )
 
 
 def test_fixed_entries_condition_coordinate_descent_seeds_and_hot_starts(tmp_path):

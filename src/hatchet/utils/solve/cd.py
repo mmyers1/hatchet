@@ -83,6 +83,7 @@ class CoordinateDescent:
         fixed_matrix=None,
         base=None,
         sample_clonal=None,
+        max_homdel_size=0.005,
     ):
         # ilp attribute used here as a convenient storage container for properties
         self.ilp = ILPSubset(
@@ -99,6 +100,7 @@ class CoordinateDescent:
             fixed_matrix=fixed_matrix,
             base=base,
             sample_clonal=sample_clonal,
+            max_homdel_size=max_homdel_size,
         )
         # Building the model here is not strictly necessary, as, during execution,
         #   self.carch and c.uarch will copy self.ilp and create+run those models.
@@ -167,6 +169,8 @@ class CoordinateDescentSplit(CoordinateDescent):
         fixed_matrix=None,
         base=None,
         sample_clonal=None,
+        w=None,
+        max_homdel_size=0.005,
     ):
         # ilp attribute used here as a convenient storage container for properties
         self.ilp = ILPSubsetSplit(
@@ -185,6 +189,8 @@ class CoordinateDescentSplit(CoordinateDescent):
             fixed_matrix=fixed_matrix,
             base=base,
             sample_clonal=sample_clonal,
+            w=w,
+            max_homdel_size=max_homdel_size,
         )
         # Building the model here is not strictly necessary, as, during execution,
         #   self.carch and c.uarch will copy self.ilp and create+run those models.

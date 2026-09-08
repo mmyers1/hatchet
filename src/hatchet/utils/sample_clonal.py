@@ -350,6 +350,7 @@ def validate_sample_clonal_constraints(
     cnstates=None,
     weights=None,
     tol=0.001,
+    max_homdel_size=0.005,
 ):
     positive_entries = [entry for entry in resolved.entries if purities[entry.sample_index] > tol]
     weight_by_cluster = None
@@ -370,10 +371,12 @@ def validate_sample_clonal_constraints(
                 f'sample-clonal total copy number {entry.total_copy_number} exceeds copy-number bound {cn_max}',
             )
         cluster_id = str(resolved.cluster_ids[entry.cluster_index])
+        cluster_weight = weight_by_cluster.get(cluster_id, 0.0) if weight_by_cluster else 0.0
         if (
             entry.total_copy_number == 0
             and total_weight > 0
-            and weight_by_cluster.get(cluster_id, 0.0) / total_weight >= 0.005
+            and cluster_weight > 0
+            and cluster_weight / total_weight >= max_homdel_size
         ):
             raise _format_error(
                 resolved.source,

@@ -18,6 +18,7 @@ ArgParse::ArgParse(int argc, char** argv)
     , _j(std::max((int)std::thread::hardware_concurrency(), 1))
     , _p(400)
     , _u(0.01)
+    , _maxHomdelSize(0.005)
     , _m(-1)
     , _s(-1)
     , _i(10)
@@ -40,6 +41,7 @@ ArgParse::ArgParse(int argc, char** argv)
     _args.insert("-j");
     _args.insert("-p");
     _args.insert("-u");
+    _args.insert("--max-homdel-size");
     _args.insert("-m");
     _args.insert("-s");
     _args.insert("-r");
@@ -63,6 +65,7 @@ ArgParse::ArgParse(int argc, char** argv)
     _optional["-j"] = false;
     _optional["-p"] = false;
     _optional["-u"] = false;
+    _optional["--max-homdel-size"] = false;
     _optional["-m"] = false;
     _optional["-s"] = false;
     _optional["-r"] = false;
@@ -108,7 +111,7 @@ std::string ArgParse::help()
 {
     std::stringstream res;
     res << "\033[96m" << "\033[1m" << "USAGE:" << "\033[0m" << "\033[96m" << std::endl;
-    res << "\t./solve input -n INT [-e INT] [-j INT] [-m INT] [-s INT] [-c COPYNUMBERS] [-F FIXED-MATRIX] [-S SAMPLE-CLONAL -b BASE] [-v] [-h]" << std::endl;
+    res << "\t./solve input -n INT [-e INT] [-j INT] [-m INT] [-s INT] [--max-homdel-size FLOAT] [-c COPYNUMBERS] [-F FIXED-MATRIX] [-S SAMPLE-CLONAL -b BASE] [-v] [-h]" << std::endl;
     res << "\033[96m" << "\033[1m" << "WHERE:" << "\033[0m" << "\033[96m" << std::endl;
     res << "\tinput PREFIX-INPUT\n\t\tCommon prefix for the input files .seg and .bbc (required)" << std::endl;
     res << "\t-n INT-NUMCLONES\n\t\tNumber of tumor clones to infer (required)" << std::endl;
@@ -118,6 +121,7 @@ std::string ArgParse::help()
     res << "\t-j INT-JOBS\n\t\tNumber of parallel jobs (default: maximum number of available processors)" << std::endl;
     res << "\t-p SEEDS\n\t\tNumber of seeds for coordinate descent (default: 400)" << std::endl;
     res << "\t-u MIN-PROP\n\t\tMinimum clone proporion in each sample (default: 0.01)" << std::endl;
+    res << "\t--max-homdel-size FLOAT\n\t\tMaximum cluster-size fraction that can have a homozygous deletion (default: 0.005)" << std::endl;
     res << "\t-m INT-MAXMEMORY\n\t\tMaximum resident memory used by Gurobi expressed in Mbytes (default: automatically inferred from the maximum of the machine)" << std::endl;
     res << "\t-s INT-TIMELIMIT\n\t\tTime limit in seconds for the ilp solving of Gurobi, after the time limit the best found solution is returned (default: no timelimit)" << std::endl;
     res << "\t-i INT-ITERATIONS\n\t\tMaximum number of iterations composed of C-step/U-step for each seed (default: 10)" << std::endl;
@@ -153,6 +157,7 @@ std::string ArgParse::toString()
     res << "\tNumber of jobs:  " << _j << std::endl;
     res << "\tNumber of seeds:  " << _p << std::endl;
     res << "\tMinimum tumor-clone threshold:  " << _u << std::endl;
+    res << "\tMaximum homozygous-deletion cluster-size fraction:  " << _maxHomdelSize << std::endl;
     res << "\tMaximum resident memory:  " << _m << std::endl;
     res << "\tTime limit:  " << _s << std::endl;
     res << "\tMaximum number of iteratios:  " << _i << std::endl;
@@ -334,6 +339,20 @@ void ArgParse::parseOptional(const std::string &arg, const std::string &value)
             } else {
                 (*_optional.find("-u")).second = true;
                 _u = cast;
+            }
+        }
+    } else if (arg == "--max-homdel-size") {
+        if((*_optional.find("--max-homdel-size")).second)
+        {
+            throw "Multiple --max-homdel-size arguments found!";
+        } else {
+            double cast = std::stod(value);
+            if(!std::isfinite(cast) || cast < 0.0 || cast > 1.0)
+            {
+                throw "The maximum homozygous-deletion cluster-size fraction must be in [0, 1]!";
+            } else {
+                (*_optional.find("--max-homdel-size")).second = true;
+                _maxHomdelSize = cast;
             }
         }
     } else if (arg == "-m") {

@@ -4,7 +4,7 @@
 
 int main(int argc, char** argv)
 {
-    if(argc != 2)
+    if(argc != 2 && argc != 4)
     {
         return 2;
     }
@@ -16,6 +16,20 @@ int main(int argc, char** argv)
         std::map<std::string, int> samples;
         samples["Tumor"] = 0;
         const SampleClonal sampleClonal = SampleClonal::read(argv[1], clusters, samples);
+        if(argc == 4)
+        {
+            DoubleArray weights;
+            weights.push_back(1.0);
+            weights.push_back(99.0);
+            if(std::string(argv[2]) == "zero-weight")
+            {
+                weights[0] = 0.0;
+                weights[1] = 100.0;
+            }
+            DoubleArray purities(1, 0.5);
+            sampleClonal.validate(6, 1, false, -1, weights, purities, std::stod(argv[3]));
+            return 0;
+        }
         DoubleMatrix R(2, DoubleArray(1, 0.0));
         R[0][0] = 2.0 / 3.0;
         R[1][0] = 2.5 / 3.0;

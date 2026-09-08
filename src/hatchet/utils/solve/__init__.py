@@ -60,7 +60,11 @@ def solve(
     fixed_matrix=None,
     base=None,
     sample_clonal=None,
+    max_homdel_size=0.005,
 ):
+
+    if not np.isfinite(max_homdel_size) or not 0 <= max_homdel_size <= 1:
+        raise ValueError('The maximum homozygous-deletion cluster-size fraction must be in [0, 1]')
 
     assert solve_mode in ('ilp', 'cd', 'both'), 'Unrecognized solve_mode'
     assert solver_available(solver), f'Solver {solver} not available or not licensed'
@@ -162,6 +166,7 @@ def solve(
             ampdel=ampdel,
             cnstates=d,
             weights=weights,
+            max_homdel_size=max_homdel_size,
         )
 
     resolved_fixed_matrix = None
@@ -182,6 +187,7 @@ def solve(
             base=base,
             cnstates=d,
             weights=weights,
+            max_homdel_size=max_homdel_size,
         )
 
     if not binwise:
@@ -200,6 +206,7 @@ def solve(
                 fixed_matrix=resolved_fixed_matrix,
                 base=base,
                 sample_clonal=resolved_sample_clonal,
+                max_homdel_size=max_homdel_size,
             )
             ilp.create_model(pprint=True)
             return _verified_solution(
@@ -223,6 +230,7 @@ def solve(
                 fixed_matrix=resolved_fixed_matrix,
                 base=base,
                 sample_clonal=resolved_sample_clonal,
+                max_homdel_size=max_homdel_size,
             )
             return _verified_solution(
                 cd.run(
@@ -252,6 +260,7 @@ def solve(
                 fixed_matrix=resolved_fixed_matrix,
                 base=base,
                 sample_clonal=resolved_sample_clonal,
+                max_homdel_size=max_homdel_size,
             )
             cd_result = cd.run(
                 solver_type=solver,
@@ -278,6 +287,7 @@ def solve(
                 fixed_matrix=resolved_fixed_matrix,
                 base=base,
                 sample_clonal=resolved_sample_clonal,
+                max_homdel_size=max_homdel_size,
             )
             ilp.create_model()
             ilp.hot_start(cA, cB)
@@ -348,6 +358,8 @@ def solve(
                 fixed_matrix=resolved_fixed_matrix,
                 base=base,
                 sample_clonal=resolved_sample_clonal,
+                w=weights,
+                max_homdel_size=max_homdel_size,
             )
             ilp.create_model(pprint=True)
             return _verified_solution(
@@ -373,6 +385,8 @@ def solve(
                 fixed_matrix=resolved_fixed_matrix,
                 base=base,
                 sample_clonal=resolved_sample_clonal,
+                w=weights,
+                max_homdel_size=max_homdel_size,
             )
             return _verified_solution(
                 cd.run(
@@ -404,6 +418,8 @@ def solve(
                 fixed_matrix=resolved_fixed_matrix,
                 base=base,
                 sample_clonal=resolved_sample_clonal,
+                w=weights,
+                max_homdel_size=max_homdel_size,
             )
             cd_result = cd.run(
                 solver_type=solver,
@@ -432,6 +448,8 @@ def solve(
                 fixed_matrix=resolved_fixed_matrix,
                 base=base,
                 sample_clonal=resolved_sample_clonal,
+                w=weights,
+                max_homdel_size=max_homdel_size,
             )
             ilp.create_model()
             ilp.hot_start(cA, cB)

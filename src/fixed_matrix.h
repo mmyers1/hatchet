@@ -58,7 +58,8 @@ public:
                   const bool ampdel,
                   const int cnstates,
                   const CNMap& copyNumbers,
-                  const DoubleArray& weights) const;
+                  const DoubleArray& weights,
+                  const double maxHomdelSize) const;
 
     void validate(const int cmax,
                   const double mu,
@@ -68,7 +69,8 @@ public:
                   const CNMap& copyNumbers,
                   const DoubleArray& weights,
                   const SampleClonal& sampleClonal,
-                  const DoubleArray& purities) const;
+                  const DoubleArray& purities,
+                  const double maxHomdelSize) const;
 
     void applyCopyNumbers(IntMatrix& A, IntMatrix& B) const;
     void applyProportions(DoubleMatrix& U) const;

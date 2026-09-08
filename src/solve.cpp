@@ -76,7 +76,8 @@ int main(int argc, char** argv)
         }
         if(!sampleClonal.empty())
         {
-            sampleClonal.validate(cmax, argparse.base(), argparse.forceAMPDEL(), argparse.d(), instance.w(), purities);
+            sampleClonal.validate(cmax, argparse.base(), argparse.forceAMPDEL(), argparse.d(), instance.w(), purities,
+                                  argparse.maxHomdelSize());
         }
         log("Inferred maximum copy number:" + std::to_string(cmax), VERBOSITY_t::DEBUGGING, argparse.v());
 
@@ -88,12 +89,12 @@ int main(int argc, char** argv)
             if(sampleClonal.empty())
             {
                 fixedMatrix.validate(cmax, argparse.minprop(), argparse.base(), argparse.forceAMPDEL(),
-                                     argparse.d(), cn, instance.w());
+                                     argparse.d(), cn, instance.w(), argparse.maxHomdelSize());
             }
             else
             {
                 fixedMatrix.validate(cmax, argparse.minprop(), argparse.base(), argparse.forceAMPDEL(),
-                                     argparse.d(), cn, instance.w(), sampleClonal, purities);
+                                     argparse.d(), cn, instance.w(), sampleClonal, purities, argparse.maxHomdelSize());
             }
         }
 
@@ -112,7 +113,7 @@ int main(int argc, char** argv)
         if(argparse.M() == SOLVE_t::BOTH)
         {
             log("Starting coordinate descent algorithm on " + std::to_string(argparse.nrSeeds()) + " seeds", VERBOSITY_t::ESSENTIAL, argparse.v());
-            CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.minprop(), argparse.base(),
+            CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
                                  argparse.forceAMPDEL(), cn, fixedMatrix, sampleClonal, purities,
                                  2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1,
                                  argparse.s(), argparse.m(), argparse.v());
@@ -121,7 +122,7 @@ int main(int argc, char** argv)
             log("Objective value from coordinate descent:\t" + std::to_string(cd.getObjValue()), VERBOSITY_t::ESSENTIAL, argparse.v());
 
             log("Starting exact ILP for improving solution found by coordinate descent", VERBOSITY_t::ESSENTIAL, argparse.v());
-            IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.base(),
+            IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
                           argparse.forceAMPDEL(), cn, FA, FB, instance.w(), fixedMatrix, sampleClonal, purities, argparse.v());
             ilp.init();
             ilp.hotStart(cd.getACN(), cd.getBCN());
@@ -142,7 +143,7 @@ int main(int argc, char** argv)
         } else if (argparse.M() == SOLVE_t::ILP)
         {
             log("Starting exact ILP", VERBOSITY_t::ESSENTIAL, argparse.v());
-            IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.base(),
+            IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
                           argparse.forceAMPDEL(), cn, FA, FB, instance.w(), fixedMatrix, sampleClonal, purities, argparse.v());
             ilp.init();
             std::pair<IntMatrix, IntMatrix> hotstart;
@@ -166,7 +167,7 @@ int main(int argc, char** argv)
         } else if (argparse.M() == SOLVE_t::CD)
         {
             log("Starting coordinate descent algorithm on " + std::to_string(argparse.nrSeeds()) + " seeds", VERBOSITY_t::ESSENTIAL, argparse.v());
-            CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.minprop(), argparse.base(),
+            CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
                                  argparse.forceAMPDEL(), cn, fixedMatrix, sampleClonal, purities,
                                  2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1,
                                  argparse.s(), argparse.m(), argparse.v());

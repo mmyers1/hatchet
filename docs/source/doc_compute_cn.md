@@ -107,6 +107,7 @@ hatchet solves a constrained and distance-based variant of the factorization tha
 | `-eD`, `--diploidcmax` | Maximum copy number with no WGD | The value of maximum copy number that is considered when assuming no WGD. When `0`-value is specified the maximum copy number is directly inferred from the data by rounding the maximum fractional copy number | 8 |
 | `-eT`, `--tetraploidcmax` | Maximum copy number with a WGD | The value of maximum copy number that is considered when assuming there is a WGD. When `0`-value is specified the maximum copy number is directly inferred from the data by rounding the maximum fractional copy number | 8 |
 | `-u`, `--minprop` | Minimum clone proportion | In every sample, each clone either is non present (clone proportion equal to 0.0) or has a clone proportion higher than this threshold | 0.03 |
+| `--max-homdel-size` | Maximum cluster size with a homozygous deletion | Maximum fraction of total covered cluster weight that may receive tumor copy number `(0, 0)`. Clusters at or above the threshold must retain at least one copy in every tumor clone. | 0.005 |
 | `-f`, `--noampdel` | Activate clone evolutionary contraints | User can decide whether to enable or not constrained about the evolution of tumor clones. These constrained force each allele to be either amplified or deleted across all tumor clones | Activated |
 | `-d`, `--cnstates` | Maximum number of distinct copy-number states per cluster | When enabled, the maximum number of distinct copy-number states per cluster is fixed. This option is deprecated | Not used |
 | `--fixed-matrix` | Fixed factorization entries | Path to a sparse TSV file containing entries of the copy-number matrices `A` and `B` or mixture matrix `U` that must remain fixed during solving | None |
@@ -119,6 +120,10 @@ These methods can be combined in 3 different modes:
 
 The mode can be specified through the flag `--mode` whose default is mode 2.
 In addition, the solving methods can be controlled by the following parameters.
+
+`--max-homdel-size` is expressed as a fraction in `[0, 1]`, not as a percentage, and its cutoff is inclusive. For example, the default `0.005` prevents a cluster covering exactly 0.5% or more of the total cluster weight from receiving `(0, 0)` in a tumor clone. This constraint is independent of the amp/del option and is applied by both the Pyomo and native solvers, including coordinate-descent copy-number steps and the Pyomo bin-wise objective.
+
+The equivalent `[compute_cn]` INI setting is `maxhomdelsize = 0.005`. It can also be overridden with the `HATCHET_COMPUTE_CN_MAXHOMDELSIZE` environment variable.
 
 | Name | Description | Usage | Default |
 |------|-------------|-------|---------|
@@ -337,7 +342,7 @@ HATCHet validates the auxiliary file before optimization and reports the source 
 - `--diploidcmax` and `--tetraploidcmax`: fixed copy numbers and fully specified A+B totals must satisfy the active branch's bounds.
 - Amp/del constraints: when enabled, fixed values cannot force the same allele to be both amplified and deleted across tumor clones for one cluster.
 - `--cnstates`: fully specified states count toward the configured limit, although this option remains deprecated.
-- Large clusters: a fully fixed tumor state of `(0, 0)` is not allowed where the existing large-cluster constraint requires at least one copy.
+- `--max-homdel-size`: a tumor state of `(0, 0)` is not allowed for a cluster whose fraction of total cluster weight is at or above the configured cutoff.
 - Mixture sums: fixed U entries for a sample may sum to at most 1. If the entire column is fixed, it must sum to 1. Any remaining mass must be assignable under `--minprop`.
 
 When neither `--diploid` nor `--tetraploid` is specified, the same file is applied to both model-selection branches. A constraint that is incompatible with either branch causes an explicit error. Force a ploidy mode when the expert constraints are intended for only that branch.

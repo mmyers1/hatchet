@@ -4,7 +4,7 @@
 
 int main(int argc, char** argv)
 {
-    if(argc < 2 || argc > 4)
+    if(argc < 2 || argc > 5)
     {
         return 2;
     }
@@ -30,7 +30,7 @@ int main(int argc, char** argv)
         int base = 1;
         bool ampdel = false;
         int cnstates = -1;
-        if(argc == 4)
+        if(argc >= 4)
         {
             const std::string scenario(argv[3]);
             if(scenario == "clonal")
@@ -46,8 +46,13 @@ int main(int argc, char** argv)
             {
                 cnstates = 1;
             }
+            else if(scenario == "zero-weight")
+            {
+                weights[0] = 0.0;
+            }
         }
-        fixed.validate(6, 0.03, base, ampdel, cnstates, copyNumbers, weights);
+        const double maxHomdelSize = argc == 5 ? std::stod(argv[4]) : 0.005;
+        fixed.validate(6, 0.03, base, ampdel, cnstates, copyNumbers, weights, maxHomdelSize);
 
         IntMatrix A(3, IntArray(clones, 0));
         IntMatrix B(3, IntArray(clones, 0));

@@ -288,7 +288,8 @@ void FixedMatrix::validate(const int cmax,
                            const bool ampdel,
                            const int cnstates,
                            const CNMap& copyNumbers,
-                           const DoubleArray& weights) const
+                           const DoubleArray& weights,
+                           const double maxHomdelSize) const
 {
     std::map<std::tuple<int, int, int>, const FixedMatrixEntry*> values;
     for(std::vector<FixedMatrixEntry>::const_iterator it = _entries.begin(); it != _entries.end(); ++it)
@@ -353,7 +354,8 @@ void FixedMatrix::validate(const int cmax,
             {
                 states.insert(CNState(static_cast<int>(a->second->value), static_cast<int>(b->second->value)));
                 const double totalWeight = std::accumulate(weights.begin(), weights.end(), 0.0);
-                if(totalWeight > 0.0 && weights[segment] / totalWeight >= 0.005 && total == 0)
+                if(totalWeight > 0.0 && weights[segment] > 0.0 &&
+                   weights[segment] / totalWeight >= maxHomdelSize && total == 0)
                 {
                     throw formatError(_source, b->second->line,
                                       "a large cluster cannot have fixed tumor copy number (0, 0)");
@@ -478,9 +480,10 @@ void FixedMatrix::validate(const int cmax,
                            const CNMap& copyNumbers,
                            const DoubleArray& weights,
                            const SampleClonal& sampleClonal,
-                           const DoubleArray& purities) const
+                           const DoubleArray& purities,
+                           const double maxHomdelSize) const
 {
-    validate(cmax, mu, base, ampdel, cnstates, copyNumbers, weights);
+    validate(cmax, mu, base, ampdel, cnstates, copyNumbers, weights, maxHomdelSize);
     if(sampleClonal.empty())
     {
         return;

@@ -354,16 +354,30 @@ def test_python_solver_uses_sample_clonal_scaling_and_explicit_base(tmp_path, mo
         mu=0.1,
         base=1,
         sample_clonal=sample_clonal,
+        max_homdel_size=0.02,
     )
 
     assert captured['copy_numbers'] == {}
     assert captured['purities'] == pytest.approx([0.5])
     assert captured['base'] == 1
+    assert captured['max_homdel_size'] == pytest.approx(0.02)
     assert captured['sample_clonal'].sample_ids == ('Tumor',)
     assert captured['f_a'].loc[1, 'Tumor'] == pytest.approx(1.0)
     assert captured['f_b'].loc[1, 'Tumor'] == pytest.approx(1.0)
     assert captured['f_a'].loc[2, 'Tumor'] == pytest.approx(1.5)
     assert captured['f_b'].loc[2, 'Tumor'] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize('max_homdel_size', (-0.01, 1.01, float('nan'), float('inf')))
+def test_python_solver_rejects_invalid_max_homdel_size(max_homdel_size):
+    with pytest.raises(ValueError, match='homozygous-deletion cluster-size fraction'):
+        solve(
+            clonal=None,
+            bbc_file='unused.bbc',
+            seg_file='unused.seg',
+            n=2,
+            max_homdel_size=max_homdel_size,
+        )
 
 
 def test_python_solver_checks_explicit_base_and_purity_assertion(tmp_path, monkeypatch):
@@ -565,7 +579,7 @@ def test_compute_cn_solves_with_sample_clonal_parameter_python(tmp_path, monkeyp
 
 def _supports_native_sample_clonal(solver):
     result = subprocess.run([str(solver), '-h'], text=True, capture_output=True)
-    return result.returncode == 0 and '-S SAMPLE-CLONAL' in result.stdout
+    return result.returncode == 0 and '-S SAMPLE-CLONAL' in result.stdout and '--max-homdel-size FLOAT' in result.stdout
 
 
 @pytest.fixture(scope='session')
@@ -604,6 +618,21 @@ def sample_clonal_cpp_solver(tmp_path_factory):
     solver = build_dir / 'solve'
     assert _supports_native_sample_clonal(solver)
     return solver
+
+
+def test_cpp_solver_parses_max_homdel_size(tmp_path, sample_clonal_cpp_solver):
+    help_result = subprocess.run([str(sample_clonal_cpp_solver), '-h'], text=True, capture_output=True)
+    assert '--max-homdel-size FLOAT' in help_result.stdout
+    assert 'default: 0.005' in help_result.stdout
+
+    prefix = _write_solver_inputs(tmp_path)
+    invalid = subprocess.run(
+        [str(sample_clonal_cpp_solver), str(prefix), '-n', '2', '--max-homdel-size', '1.01'],
+        text=True,
+        capture_output=True,
+    )
+    assert invalid.returncode != 0
+    assert 'must be in [0, 1]' in invalid.stderr
 
 
 @pytest.mark.parametrize('mode', (0, 1, 2), ids=('cd-plus-ilp', 'ilp', 'cd'))
@@ -855,6 +884,7 @@ def test_execute_python_passes_sample_clonal_payload_and_base(tmp_path, monkeypa
     assert captured['clonal'] is None
     assert captured['base'] == 2
     assert captured['sample_clonal'] is sample_clonal
+    assert captured['max_homdel_size'] == pytest.approx(0.005)
 
 
 def test_execute_cpp_uses_normalized_temporary_sample_clonal_file(tmp_path, monkeypatch):
@@ -1074,6 +1104,43 @@ def test_validate_sample_clonal_constraints_rejects_infeasible_requirements(inli
             weights=pd.Series({cluster: 1.0 for cluster in clusters}),
             **options,
         )
+
+
+def test_sample_clonal_homdel_validation_uses_custom_inclusive_cutoff():
+    resolved = resolve_sample_clonal(
+        parse_sample_clonal_inline('Tumor=c1:0:0,c2:1:0'),
+        ('c1', 'c2'),
+        ('Tumor',),
+    )
+    options = {
+        'purities': [0.5],
+        'cn_max': 6,
+        'base': 1,
+        'ampdel': False,
+        'weights': pd.Series({'c1': 1.0, 'c2': 99.0}),
+    }
+
+    validate_sample_clonal_constraints(resolved, max_homdel_size=0.02, **options)
+    with pytest.raises(SampleClonalFormatError, match='cannot have required tumor copy number'):
+        validate_sample_clonal_constraints(resolved, max_homdel_size=0.01, **options)
+
+
+def test_sample_clonal_homdel_validation_ignores_zero_weight_clusters():
+    resolved = resolve_sample_clonal(
+        parse_sample_clonal_inline('Tumor=c1:0:0,c2:1:0'),
+        ('c1', 'c2'),
+        ('Tumor',),
+    )
+
+    validate_sample_clonal_constraints(
+        resolved,
+        purities=[0.5],
+        cn_max=6,
+        base=1,
+        ampdel=False,
+        weights=pd.Series({'c1': 0.0, 'c2': 1.0}),
+        max_homdel_size=0,
+    )
 
 
 def _resolved_fixed_matrix(tmp_path, rows, sample_clonal, clones=3):
@@ -1351,6 +1418,40 @@ def test_cpp_sample_clonal_parser_rejects_invalid_files(tmp_path, cpp_sample_clo
 
     assert result.returncode == 1
     assert message in result.stderr
+
+
+def test_cpp_sample_clonal_homdel_validation_uses_custom_inclusive_cutoff(
+    tmp_path,
+    cpp_sample_clonal_reader,
+):
+    path = _write_sample_clonal(
+        tmp_path,
+        f'{FORMAT_MARKER}\nsample\tcluster\tcn_a\tcn_b\nTumor\tc1\t0\t0\nTumor\tc2\t1\t0\n',
+    )
+
+    subprocess.run([str(cpp_sample_clonal_reader), str(path), 'validate', '0.02'], check=True)
+    result = subprocess.run(
+        [str(cpp_sample_clonal_reader), str(path), 'validate', '0.01'],
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 1
+    assert 'cannot have required tumor copy number' in result.stderr
+
+
+def test_cpp_sample_clonal_homdel_validation_ignores_zero_weight_clusters(
+    tmp_path,
+    cpp_sample_clonal_reader,
+):
+    path = _write_sample_clonal(
+        tmp_path,
+        f'{FORMAT_MARKER}\nsample\tcluster\tcn_a\tcn_b\nTumor\tc1\t0\t0\nTumor\tc2\t1\t0\n',
+    )
+
+    subprocess.run(
+        [str(cpp_sample_clonal_reader), str(path), 'zero-weight', '0'],
+        check=True,
+    )
 
 
 def test_compute_cn_documentation_covers_sample_clonal_contract():

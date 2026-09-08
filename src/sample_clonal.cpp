@@ -292,7 +292,8 @@ void SampleClonal::validate(const int cmax,
                             const bool ampdel,
                             const int cnstates,
                             const DoubleArray& weights,
-                            const DoubleArray& purities) const
+                            const DoubleArray& purities,
+                            const double maxHomdelSize) const
 {
     const double totalWeight = std::accumulate(weights.begin(), weights.end(), 0.0);
     std::map<int, std::set<CNState> > statesByCluster;
@@ -310,7 +311,8 @@ void SampleClonal::validate(const int cmax,
                               "sample-clonal total copy number exceeds copy-number bound " +
                               std::to_string(cmax));
         }
-        if(entry->total() == 0 && totalWeight > 0.0 && weights[entry->cluster] / totalWeight >= 0.005)
+        if(entry->total() == 0 && totalWeight > 0.0 && weights[entry->cluster] > 0.0 &&
+           weights[entry->cluster] / totalWeight >= maxHomdelSize)
         {
             throw formatError(_source, entry->line,
                               "large cluster '" + entry->clusterLabel +
