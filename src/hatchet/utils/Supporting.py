@@ -3,6 +3,7 @@ import os
 import os.path
 import subprocess
 import datetime
+import functools
 import requests
 import hashlib
 from urllib.parse import urlparse
@@ -192,6 +193,24 @@ def run(
         os.remove(stdouterr_filepath)
 
     return return_codes[0] if singleton else return_codes
+
+
+@functools.lru_cache(maxsize=None)
+def _indexed_contigs(bamfile):
+    import pysam
+
+    with pysam.AlignmentFile(bamfile) as bam:
+        return frozenset(bam.references) if bam.has_index() else frozenset()
+
+
+def indexed_region(bamfile, region):
+    """
+    Return region (a contig name or contig:start-end) if bamfile is indexed and contains its contig, so that tools
+    like bcftools mpileup can jump to it through the index rather than stream the whole file; otherwise None.
+    """
+    contigs = _indexed_contigs(bamfile)
+    contig = region if region in contigs else region.rsplit(':', 1)[0]
+    return region if contig in contigs else None
 
 
 def download(

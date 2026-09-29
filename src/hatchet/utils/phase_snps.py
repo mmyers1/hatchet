@@ -2,7 +2,6 @@ import os.path
 import subprocess as pr
 import glob
 import shlex
-import shutil
 
 import hatchet.utils.ArgParsing as ap
 from hatchet.utils.Supporting import log, logArgs, error, ensure, run
@@ -128,12 +127,14 @@ def print_log(path, chromosomes):
         sep='\t',
     )
     for c in chromosomes:
-        for l in open(os.path.join(path, f'{c}_alignments.log'), 'r'):
-            if 'SNPs included' in l:
-                snps = int(l.split()[1])
-            elif 'reference panel sites included' in l:
-                phased_snps = int(l.split()[1])
+        with open(os.path.join(path, f'{c}_alignments.log'), 'r') as f:
+            for l in f:
+                if 'SNPs included' in l:
+                    snps = int(l.split()[1])
+                elif 'reference panel sites included' in l:
+                    phased_snps = int(l.split()[1])
         print(c, phased_snps, snps, float(phased_snps / snps), file=out, sep='\t')
+    out.close()
 
 
 def concat(vcfs, outdir, bcftools):
@@ -182,17 +183,9 @@ class Phaser(Worker):
 
         # (1) PREPROCESS
         if self.refvers == 'hg19':
-            # no need for liftover, just deal with chr annotation
-            if self.chrnot:
-                vcf_toFilter = self.change_chr(
-                    infile=vcf,
-                    chromosome=chromosome,
-                    outname='toFilter',
-                    rename=self.rename[0],
-                )
-            else:
-                # just copy files, vcfs already appropriately formatted
-                vcf_toFilter = self.stage_vcfs(infile=vcf, chromosome=chromosome)
+            # no need for liftover, just deal with chr annotation (done while filtering, below)
+            vcf_toFilter = vcf
+            rename = self.rename[0] if self.chrnot else None
         else:
             # liftover
             vcf_toFilter = self.liftover(
@@ -203,10 +196,11 @@ class Phaser(Worker):
                 refgen=self.hg19,
                 ch=False,
             )
+            rename = None
 
         # (2) FILTERING AND PHASING
         # filter out multi-allelic sites and indels
-        vcf_filtered = self.biallelic(infile=vcf_toFilter, chromosome=chromosome)
+        vcf_filtered = self.biallelic(infile=vcf_toFilter, chromosome=chromosome, rename=rename)
         vcf_phased = self.run_shapeit(infile=vcf_filtered, chromosome=chromosome)  # phase
 
         # (3) POSTPROCESS
@@ -252,8 +246,8 @@ class Phaser(Worker):
         )
         # need to change 'chr' notation depending on liftover direction
         c = chromosome if not ch else f'chr{chromosome}'
-        # filter out mapping to other chromosomes/contigs!
-        cmd2 = f'{self.bcftools} filter --output-type z --regions {c} {tmpfile}'
+        # filter out mapping to other chromosomes/contigs! (uncompressed, as it is piped straight into norm)
+        cmd2 = f'{self.bcftools} filter --output-type u --regions {c} {tmpfile}'
         # remove duplicate sites from liftover
         cmd3 = f'{self.bcftools} norm --remove-duplicates --output {outfile}'
 
@@ -295,23 +289,34 @@ class Phaser(Worker):
         )
         return outfile
 
-    def stage_vcfs(self, infile, chromosome):
-        # copy file, so that phasing takes same input file name regardless of conditions, unzip
-        outfile = os.path.join(self.outdir, f'{chromosome}_toFilter.vcf.gz')
-        shutil.copyfile(infile, outfile)
-        return outfile
-
-    def biallelic(self, infile, chromosome):
-        # use bcftools to discard multi-allelic sites and indels
+    def biallelic(self, infile, chromosome, rename=None):
+        # use bcftools to discard multi-allelic sites and indels, after renaming chromosomes if a rename file is given
         outfile = os.path.join(self.outdir, f'{chromosome}_filtered.vcf.gz')
-        run(
-            (
-                f'{self.bcftools} view --max-alleles 2 --exclude-types indels --output-type z --output-file {outfile} '
-                f'{infile}'
-            ),
-            stdouterr_filepath=os.path.join(self.outdir, f'{chromosome}_bcftools.log'),
-            error_msg=f'Biallelic sites filtering failed on {infile}.',
+        errname = os.path.join(self.outdir, f'{chromosome}_bcftools.log')
+        cmd_view = (
+            f'{self.bcftools} view --max-alleles 2 --exclude-types indels --output-type z --output-file {outfile}'
         )
+        if rename is None:
+            run(
+                f'{cmd_view} {infile}',
+                stdouterr_filepath=errname,
+                error_msg=f'Biallelic sites filtering failed on {infile}.',
+            )
+        else:
+            # pipe the renamed records straight into the filter, without writing them to a compressed file
+            cmd_annotate = f'{self.bcftools} annotate --rename-chrs {rename} --output-type u {infile}'
+            with open(errname, 'w') as err:
+                annotate = pr.Popen(shlex.split(cmd_annotate), stdout=pr.PIPE, stderr=err)
+                view = pr.Popen(shlex.split(cmd_view) + ['-'], stdin=annotate.stdout, stdout=err, stderr=err)
+                annotate.stdout.close()
+                codes = [annotate.wait(), view.wait()]
+            if any(c != 0 for c in codes):
+                error(
+                    f'Failed to re-annotate chromosomes and filter biallelic sites with bcftools on {infile}. '
+                    f'Please check {errname} for possible hints.',
+                    raise_exception=True,
+                )
+            os.remove(errname)
         return outfile
 
     def run_shapeit(self, infile, chromosome):

@@ -2,11 +2,11 @@ import os
 import os.path
 import shlex
 import subprocess as pr
-from multiprocessing import Process, Queue, JoinableQueue, Lock, Value
+from multiprocessing.pool import ThreadPool
 
 from hatchet.utils.ArgParsing import parse_genotype_snps_arguments
-from hatchet.utils.Supporting import log, logArgs, error
-import hatchet.utils.ProgressBar as pb
+from hatchet.utils.Supporting import log, logArgs, error, indexed_region
+from hatchet.utils.multiprocessing import Worker
 
 
 def main(args=None):
@@ -58,7 +58,8 @@ def main(args=None):
         number = ''.join([_l for _l in number if _l.isdigit()])
         return int(number) if len(number) > 0 else 0
 
-    number_snps = sum(count(f) for f in snps)
+    with ThreadPool(max(1, min(args['j'], len(snps)))) as p:
+        number_snps = sum(p.map(count, snps))
 
     if number_snps == 0:
         raise ValueError(error('No SNPs found in the normal!\n'))
@@ -90,80 +91,14 @@ def call(
     snplist=None,
     verbose=False,
 ):
-    # Define a Lock and a shared value for log printing through ProgressBar
-    err_lock = Lock()
-    counter = Value('i', 0)
-    progress_bar = pb.ProgressBar(
-        total=len(samples) * len(chromosomes),
-        length=40,
-        lock=err_lock,
-        counter=counter,
-        verbose=verbose,
-    )
-
-    # Establish communication queues
-    tasks = JoinableQueue()
-    results = Queue()
-
-    # Enqueue jobs
-    jobs_count = 0
-    for bam in samples:
-        for chro in chromosomes:
-            tasks.put((bam[0], bam[1], chro))
-            jobs_count += 1
-
-    # Setting up the workers
-    workers = [
-        Caller(
-            tasks,
-            results,
-            progress_bar,
-            bcftools,
-            reference,
-            q,
-            Q,
-            mincov,
-            dp,
-            E,
-            outdir,
-            snplist,
-            verbose,
-        )
-        for i in range(min(num_workers, jobs_count))
-    ]
-
-    # Add a poison pill for each worker
-    for i in range(len(workers)):
-        tasks.put(None)
-
-    # Start the workers
-    for w in workers:
-        w.start()
-
-    # Wait for all of the tasks to finish
-    tasks.join()
-
-    # Get the results
-    sorted_results = sorted([results.get() for i in range(jobs_count)])
-
-    # Close Queues
-    tasks.close()
-    results.close()
-
-    # Ensure each worker terminates
-    for w in workers:
-        w.terminate()
-        w.join()
-
-    return sorted_results
+    work = [(bam[0], bam[1], chro) for bam in samples for chro in chromosomes]
+    caller = Caller(bcftools, reference, q, Q, mincov, dp, E, outdir, snplist, verbose)
+    return sorted(caller.run(work=work, n_instances=num_workers))
 
 
-class Caller(Process):
+class Caller(Worker):
     def __init__(
         self,
-        task_queue,
-        result_queue,
-        progress_bar,
         bcftools,
         reference,
         q,
@@ -175,10 +110,6 @@ class Caller(Process):
         snplist,
         verbose,
     ):
-        Process.__init__(self)
-        self.task_queue = task_queue
-        self.result_queue = result_queue
-        self.progress_bar = progress_bar
         self.bcftools = bcftools
         self.reference = reference
         self.q = q
@@ -190,30 +121,8 @@ class Caller(Process):
         self.snplist = snplist
         self.verbose = verbose
 
-    def run(self):
-        while True:
-            next_task = self.task_queue.get()
-            if next_task is None:
-                # Poison pill means shutdown
-                self.task_queue.task_done()
-                break
-
-            self.progress_bar.progress(
-                advance=False,
-                msg='{} starts on {} for {})'.format(self.name, next_task[1], next_task[2]),
-            )
-            snps = self.callSNPs(
-                bamfile=next_task[0],
-                samplename=next_task[1],
-                chromosome=next_task[2],
-            )
-            self.progress_bar.progress(
-                advance=True,
-                msg='{} ends on {} for {})'.format(self.name, next_task[1], next_task[2]),
-            )
-            self.task_queue.task_done()
-            self.result_queue.put(snps)
-        return
+    def work(self, bamfile, samplename, chromosome):
+        return self.callSNPs(bamfile=bamfile, samplename=samplename, chromosome=chromosome)
 
     def callSNPs(self, bamfile, samplename, chromosome):
         errname = os.path.join(self.outdir, '{}_{}_bcftools.log'.format(samplename, chromosome))
@@ -222,23 +131,14 @@ class Caller(Process):
 
         if self.snplist is not None:
             cmd_tgt = "{} query -f '%CHROM\t%POS\n' -r {} {}".format(self.bcftools, chromosome, self.snplist)
-            cmd_gzip = 'gzip -9 -'
+            # temporary file, removed after use: fast compression
+            cmd_gzip = 'gzip -1 -'
             tgtfile = os.path.join(self.outdir, 'target_{}.pos.gz'.format(chromosome))
             with open(tgtfile, 'w') as tout, open(errname, 'w') as err:
-                tgt = pr.Popen(
-                    shlex.split(cmd_tgt),
-                    stdout=pr.PIPE,
-                    stderr=err,
-                    universal_newlines=True,
-                )
-                gzip = pr.Popen(
-                    shlex.split(cmd_gzip),
-                    stdin=tgt.stdout,
-                    stdout=tout,
-                    stderr=err,
-                    universal_newlines=True,
-                )
-                codes = map(lambda p: p.wait(), [tgt, gzip])
+                tgt = pr.Popen(shlex.split(cmd_tgt), stdout=pr.PIPE, stderr=err)
+                gzip = pr.Popen(shlex.split(cmd_gzip), stdin=tgt.stdout, stdout=tout, stderr=err)
+                tgt.stdout.close()
+                codes = [tgt.wait(), gzip.wait()]
             if any(c != 0 for c in codes):
                 raise ValueError(
                     error(
@@ -257,6 +157,10 @@ class Caller(Process):
         if self.snplist is not None:
             assert os.path.isfile(tgtfile)
             cmd_mpileup += ' -T {}'.format(tgtfile)
+            # With only -T, mpileup streams the whole BAM; restricting it to the chromosome makes it jump there instead
+            region = indexed_region(bamfile, chromosome)
+            if region is not None:
+                cmd_mpileup += ' -r {}'.format(region)
         else:
             cmd_mpileup += ' -r {}'.format(chromosome)
         if self.E:
@@ -265,30 +169,12 @@ class Caller(Process):
         cmd_filter = "{} view -i 'FMT/DP>={}' -Oz -o {}".format(self.bcftools, self.mincov, outfile)
 
         with open(errname, 'w') as err:
-            pcss = []
-            mpileup = pr.Popen(
-                shlex.split(cmd_mpileup),
-                stdout=pr.PIPE,
-                stderr=err,
-                universal_newlines=True,
-            )
-            pcss.append(mpileup)
-            call = pr.Popen(
-                shlex.split(cmd_call),
-                stdin=mpileup.stdout,
-                stdout=pr.PIPE,
-                stderr=err,
-                universal_newlines=True,
-            )
-            pcss.append(call)
-            filter = pr.Popen(
-                shlex.split(cmd_filter),
-                stdin=call.stdout,
-                stdout=pr.PIPE,
-                stderr=err,
-                universal_newlines=True,
-            )
-            pcss.append(filter)
+            mpileup = pr.Popen(shlex.split(cmd_mpileup), stdout=pr.PIPE, stderr=err)
+            call = pr.Popen(shlex.split(cmd_call), stdin=mpileup.stdout, stdout=pr.PIPE, stderr=err)
+            mpileup.stdout.close()
+            filter = pr.Popen(shlex.split(cmd_filter), stdin=call.stdout, stderr=err)
+            call.stdout.close()
+            pcss = [mpileup, call, filter]
             codes = [p.wait() for p in pcss]
         if any(c != 0 for c in codes):
             raise ValueError(

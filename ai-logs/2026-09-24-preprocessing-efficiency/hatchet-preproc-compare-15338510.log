@@ -1,0 +1,45 @@
+host: isca082.mskcc.org; samtools 1.21; bcftools 1.19
+normal: /data1/papaemme/isabl/data/analyses/32/73/163273/I-H-135387-N1-1-D1-1.bam
+tumors: /data1/papaemme/isabl/data/analyses/32/72/163272/I-H-135387-T1-1-D1-1.bam /data1/papaemme/isabl/data/analyses/85/91/408591/IID_H135387_T04_01_WG01.bam
+names: Normal T01 T04; reference: /data1/shahs3/users/myersm2/reference/GRCh37-lite.fa (hg19); CHRNOT=''; chromosomes: 20 21 22
+SNP list: /data1/shahs3/users/myersm2/reference/snp-lists/hg19_nochr/00-All.vcf.gz; panel: /data1/shahs3/users/myersm2/reference/phasing-panel; work: /data1/shahs3/users/myersm2/hatchet-preproc-verify/wgs; versions: old new; steps: genotype alleles reads phase; J=8
+pre-flight OK
+== extracting chromosomes 20 21 22 from /data1/shahs3/users/myersm2/reference/snp-lists/hg19_nochr/00-All.vcf.gz
+== genotype
+{"returncode": 0, "wall_s": 786.6, "cpu_s": 1632.31, "peak_tree_rss_mb": 1226.1, "max_single_rss_mb": 219.9, "peak_python_rss_mb": 649.2}
+== alleles
+{"returncode": 0, "wall_s": 1731.71, "cpu_s": 6577.04, "peak_tree_rss_mb": 2451.4, "max_single_rss_mb": 467.9, "peak_python_rss_mb": 1971.1}
+== reads
+{"returncode": 0, "wall_s": 3241.95, "cpu_s": 12159.6, "peak_tree_rss_mb": 7635.5, "max_single_rss_mb": 4303.9, "peak_python_rss_mb": 7612.8}
+== phase
+{"returncode": 0, "wall_s": 142.36, "cpu_s": 309.58, "peak_tree_rss_mb": 2316.9, "max_single_rss_mb": 782.6, "peak_python_rss_mb": 648.7}
+== genotype
+{"returncode": 0, "wall_s": 209.71, "cpu_s": 502.31, "peak_tree_rss_mb": 1354.8, "max_single_rss_mb": 225.2, "peak_python_rss_mb": 728.6}
+== alleles
+{"returncode": 0, "wall_s": 81.51, "cpu_s": 288.46, "peak_tree_rss_mb": 1910.2, "max_single_rss_mb": 227.8, "peak_python_rss_mb": 1324.7}
+== reads
+{"returncode": 0, "wall_s": 2763.45, "cpu_s": 11833.68, "peak_tree_rss_mb": 6557.3, "max_single_rss_mb": 2035.8, "peak_python_rss_mb": 1378.3}
+== phase
+{"returncode": 0, "wall_s": 147.05, "cpu_s": 315.21, "peak_tree_rss_mb": 2314.8, "max_single_rss_mb": 782.8, "peak_python_rss_mb": 647.9}
+IDENTICAL  baf/bulk.1bed
+IDENTICAL  baf/normal.1bed
+IDENTICAL  phase/phased.log
+IDENTICAL  phase/phased.vcf.gz
+IDENTICAL  rdr/20.thresholds.gz
+IDENTICAL  rdr/20.total.gz
+IDENTICAL  rdr/21.thresholds.gz
+IDENTICAL  rdr/21.total.gz
+IDENTICAL  rdr/22.thresholds.gz
+IDENTICAL  rdr/22.total.gz
+IDENTICAL  rdr/samples.txt
+IDENTICAL  rdr/total.tsv
+IDENTICAL  snps/20.vcf.gz
+IDENTICAL  snps/21.vcf.gz
+IDENTICAL  snps/22.vcf.gz
+
+| step | wall old -> new | CPU old -> new | peak RSS, process tree | peak RSS, python | largest process |
+|---|---|---|---|---|---|
+| alleles | 1732 -> 82 s | 6577 -> 288 s | 2.39 -> 1.87 GB | 1.92 -> 1.29 GB | python 0.42 -> python 0.22 GB |
+| genotype | 787 -> 210 s | 1632 -> 502 s | 1.20 -> 1.32 GB | 0.63 -> 0.71 GB | python 0.21 -> bcftools 0.22 GB |
+| phase | 142 -> 147 s | 310 -> 315 s | 2.26 -> 2.26 GB | 0.63 -> 0.63 GB | shapeit 0.76 -> shapeit 0.76 GB |
+| reads | 3242 -> 2763 s | 12160 -> 11834 s | 7.46 -> 6.40 GB | 7.43 -> 1.35 GB | python 4.20 -> mosdepth 1.99 GB |

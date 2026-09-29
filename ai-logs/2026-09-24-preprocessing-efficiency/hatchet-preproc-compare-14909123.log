@@ -1,0 +1,2 @@
+== genotype
+{"returncode": 1, "wall_s": 7.2, "cpu_s": 4.2, "peak_tree_rss_mb": 224.2, "max_single_rss_mb": 224.7, "peak_python_rss_mb": 222.7}

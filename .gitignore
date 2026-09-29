@@ -1,3 +1,8 @@
+*.sh
+*-1.7
+CLAUDE.md
+ai-logs/2026-09-24-preprocessing-efficiency/temp
+
 # Temp
 src/hatchet/solve
 *~
