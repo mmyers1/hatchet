@@ -8,6 +8,8 @@ import subprocess
 
 import pandas as pd
 import pytest
+from pyomo import environ as pe
+from pyomo.core.expr.visitor import identify_variables
 from pyomo.repn.standard_repn import generate_standard_repn
 
 from hatchet import config
@@ -29,7 +31,8 @@ from hatchet.utils.fixed_matrix import (
     verify_fixed_matrix_solution,
 )
 from hatchet.utils.solve.ilp_subset import ILPSubset, ILPSubsetSplit
-from hatchet.utils.solve import solver_available
+from hatchet.utils.solve import _finalize_solution, solver_available
+from hatchet.utils.solve.utils import canonicalize_clone_order
 
 
 FORMAT_MARKER = '# HATCHET_FIXED_ENTRIES 1'
@@ -300,14 +303,6 @@ def test_validate_fixed_matrix_accepts_minprop_boundaries(tmp_path, fixed_propor
             {'cnstates': 1},
             'exceeding cnstates',
         ),
-        (
-            'A\tcluster1\tclone1\t2\nB\tcluster1\tclone1\t1\n'
-            'A\tcluster2\tclone1\t2\nB\tcluster2\tclone1\t1\n'
-            'A\tcluster1\tclone2\t1\nB\tcluster1\tclone2\t1\n'
-            'A\tcluster2\tclone2\t1\nB\tcluster2\tclone2\t1\n',
-            {},
-            'fully fixed clone1 burden',
-        ),
     ],
 )
 def test_validate_fixed_matrix_rejects_local_solver_conflicts(tmp_path, rows, kwargs, message):
@@ -330,6 +325,34 @@ def test_validate_fixed_matrix_rejects_local_solver_conflicts(tmp_path, rows, kw
         validate_fixed_matrix(fixed, **options)
 
     assert str(fixed.source) in str(exc_info.value)
+
+
+def test_validate_fixed_matrix_accepts_any_fully_fixed_clone_order(tmp_path):
+    # The solver no longer imposes a clone order, so a heavier clone1 than clone2 is valid
+    fixed = _parse_and_resolve(
+        tmp_path,
+        'A\tcluster1\tclone1\t2\nB\tcluster1\tclone1\t1\n'
+        'A\tcluster2\tclone1\t2\nB\tcluster2\tclone1\t1\n'
+        'A\tcluster1\tclone2\t1\nB\tcluster1\tclone2\t1\n'
+        'A\tcluster2\tclone2\t1\nB\tcluster2\tclone2\t1\n',
+        clones=3,
+    )
+
+    assert (
+        validate_fixed_matrix(
+            fixed,
+            cn_max=6,
+            mu=0.03,
+            copy_numbers={},
+            purities=None,
+            ampdel=False,
+            base=1,
+            cnstates=None,
+            weights=None,
+        )
+        is fixed
+    )
+    assert fixed.addresses_tumor_clones
 
 
 def _compute_cn_input(tmp_path):
@@ -538,6 +561,10 @@ def test_cpp_fixed_matrix_parser_and_operations(tmp_path, cpp_fixed_matrix_reade
         'U\tnormal\tsample1\t0.2\nU\tclone1\tsample1\t0.3\n',
     )
     subprocess.run([str(cpp_fixed_matrix_reader), str(fixed_path)], check=True)
+
+
+def test_cpp_canonical_clone_order_sorts_tumor_clones_stably(cpp_fixed_matrix_reader):
+    subprocess.run([str(cpp_fixed_matrix_reader), '--canonicalize'], check=True)
 
 
 def test_cpp_fixed_matrix_parser_accepts_utf8_bom_blank_lines_and_arbitrary_order(
@@ -760,8 +787,17 @@ def _build_ilp(n=4, fixed_matrix=None, weights=None, max_homdel_size=0.005):
     return ilp
 
 
-def _fixed_equalities(model):
-    return {constraint.body.name: float(constraint.lower()) for constraint in model.fixed_matrix_constraints.values()}
+def _fixed_entry_values(model):
+    """Copy-number and proportion variables pinned by bounds, excluding the normal clone's copy numbers."""
+    assert len(model.fixed_value_conflicts) == 0
+    fixed = {}
+    for variable in model.component_data_objects(pe.Var):
+        prefix, *indices = variable.name.split('_')
+        if prefix not in ('cA', 'cB', 'u') or (prefix != 'u' and indices[1] == '1'):
+            continue
+        if variable.lb is not None and variable.lb == variable.ub:
+            fixed[variable.name] = float(variable.lb)
+    return fixed
 
 
 def test_python_models_enforce_and_preserve_sparse_fixed_entries(tmp_path):
@@ -771,14 +807,14 @@ def test_python_models_enforce_and_preserve_sparse_fixed_entries(tmp_path):
     )
     ilp = _build_ilp(n=3, fixed_matrix=fixed)
 
-    assert _fixed_equalities(ilp.model) == {'cA_1_2': 2.0, 'cB_2_3': 1.0, 'u_2_1': 0.4}
+    assert _fixed_entry_values(ilp.model) == {'cA_1_2': 2.0, 'cB_2_3': 1.0, 'u_2_1': 0.4}
 
     carch = copy(ilp)
     carch.fix_u([[0.2], [0.4], [0.4]])
     carch.create_model()
     assert carch.fixed_matrix is fixed
     assert carch._fixed_u[1][0] == 0.4
-    assert _fixed_equalities(carch.model) == {'cA_1_2': 2.0, 'cB_2_3': 1.0}
+    assert _fixed_entry_values(carch.model) == {'cA_1_2': 2.0, 'cB_2_3': 1.0}
 
     uarch = copy(ilp)
     uarch.fix_c([[1, 0, 0], [1, 0, 0]], [[1, 0, 0], [1, 0, 0]])
@@ -786,7 +822,7 @@ def test_python_models_enforce_and_preserve_sparse_fixed_entries(tmp_path):
     assert uarch.fixed_matrix is fixed
     assert uarch._fixed_cA[0][1] == 2
     assert uarch._fixed_cB[1][2] == 1
-    assert _fixed_equalities(uarch.model) == {'u_2_1': 0.4}
+    assert _fixed_entry_values(uarch.model) == {'u_2_1': 0.4}
 
 
 def _build_split_ilp(fixed_matrix, weights=None, max_homdel_size=0.005):
@@ -827,17 +863,17 @@ def test_binwise_models_enforce_and_preserve_sparse_fixed_entries(tmp_path):
         'A\tcluster1\tclone1\t2\nB\tcluster2\tclone2\t1\nU\tclone1\tsample1\t0.4\n',
     )
     ilp = _build_split_ilp(fixed)
-    assert _fixed_equalities(ilp.model) == {'cA_1_2': 2.0, 'cB_2_3': 1.0, 'u_2_1': 0.4}
+    assert _fixed_entry_values(ilp.model) == {'cA_1_2': 2.0, 'cB_2_3': 1.0, 'u_2_1': 0.4}
 
     carch = copy(ilp)
     carch.fix_u([[0.2], [0.4], [0.4]])
     carch.create_model()
-    assert _fixed_equalities(carch.model) == {'cA_1_2': 2.0, 'cB_2_3': 1.0}
+    assert _fixed_entry_values(carch.model) == {'cA_1_2': 2.0, 'cB_2_3': 1.0}
 
     uarch = copy(ilp)
     uarch.fix_c([[1, 0, 0], [1, 0, 0]], [[1, 0, 0], [1, 0, 0]])
     uarch.create_model()
-    assert _fixed_equalities(uarch.model) == {'u_2_1': 0.4}
+    assert _fixed_entry_values(uarch.model) == {'u_2_1': 0.4}
 
 
 def _constraint_variable_names(constraints):
@@ -845,6 +881,53 @@ def _constraint_variable_names(constraints):
         frozenset(variable.name for variable in generate_standard_repn(constraint.body).linear_vars)
         for constraint in constraints.values()
     }
+
+
+def _build_clonal_ilp(fixed_matrix=None):
+    cluster_ids = pd.Index(['cluster1', 'cluster2'], name='#ID')
+    f_a = pd.DataFrame([[1.0], [2.0]], index=cluster_ids, columns=['sample1'])
+    f_b = pd.DataFrame([[1.0], [1.0]], index=cluster_ids, columns=['sample1'])
+    ilp = ILPSubset(
+        n=3,
+        cn_max=6,
+        d=-1,
+        mu=0.03,
+        ampdel=False,
+        copy_numbers={'cluster1': (1, 1)},
+        f_a=f_a,
+        f_b=f_b,
+        w=pd.Series([1.0, 2.0], index=cluster_ids),
+        purities=None,
+        fixed_matrix=fixed_matrix,
+    )
+    ilp.create_model()
+    return ilp
+
+
+def test_python_models_fix_clonal_clusters_with_bounds_and_omit_implied_rows():
+    ilp = _build_clonal_ilp()
+
+    assert _fixed_entry_values(ilp.model) == {'cA_1_2': 1.0, 'cB_1_2': 1.0, 'cA_1_3': 1.0, 'cB_1_3': 1.0}
+    free_tumor_cells = {frozenset(('cA_2_2', 'cB_2_2')), frozenset(('cA_2_3', 'cB_2_3'))}
+    assert _constraint_variable_names(ilp.model.homdel_constraints) == free_tumor_cells
+    total_rows = {
+        names
+        for names in _constraint_variable_names(ilp.model.constraints)
+        if all(name.startswith(('cA_', 'cB_')) for name in names)
+    }
+    assert total_rows == free_tumor_cells
+
+
+def test_python_models_enforce_conflicting_fixed_values_as_equalities(tmp_path):
+    fixed = _parse_and_resolve(tmp_path, 'A\tcluster1\tclone1\t2\n')
+    ilp = _build_clonal_ilp(fixed)
+
+    assert (ilp.model.cA_1_2.lb, ilp.model.cA_1_2.ub) == (1, 1)
+    conflicts = [
+        (constraint.body.name, float(constraint.lower()), float(constraint.upper()))
+        for constraint in ilp.model.fixed_value_conflicts.values()
+    ]
+    assert conflicts == [('cA_1_2', 2.0, 2.0)]
 
 
 @pytest.mark.parametrize('split', (False, True))
@@ -919,6 +1002,22 @@ def test_fixed_entries_condition_coordinate_descent_seeds_and_hot_starts(tmp_pat
     assert ilp.cA[0][1].value == 2
     assert ilp.cB[1][2].value == 1
 
+    ilp.hot_start(start_a, start_b, [[0.2], [0.3], [0.5]])
+    assert [ilp.u[clone_index][0].value for clone_index in range(3)] == [0.2, 0.3, 0.5]
+    assert ilp.model.x_2_1.value == 1
+    assert (ilp.model.bitcA_1_1_2.value, ilp.model.bitcA_2_1_2.value) == (0, 1)
+
+
+def test_hot_start_keeps_clone_columns_in_place():
+    ilp = _build_ilp(n=4)
+    start_a = [[1, 3, 2, 1], [1, 3, 2, 1]]
+    start_b = [[1, 1, 1, 0], [1, 1, 1, 0]]
+
+    ilp.hot_start(start_a, start_b)
+
+    assert [[ilp.cA[m][n].value for n in range(4)] for m in range(2)] == start_a
+    assert [[ilp.cB[m][n].value for n in range(4)] for m in range(2)] == start_b
+
 
 def test_fixed_subproblem_matrices_reject_invalid_shapes_and_sums():
     ilp = _build_ilp(n=3)
@@ -969,12 +1068,12 @@ def test_fixed_matrix_solve_preserves_constraints_with_positive_residual(tmp_pat
 def test_partially_fixed_matrix_can_pass_local_validation_but_make_solver_infeasible(tmp_path):
     if not solver_available('gurobi'):
         pytest.skip('a working Gurobi Pyomo solver is unavailable')
+    # clone2 has zero copies everywhere, so it cannot receive the fixed positive proportion
     fixed = _parse_and_resolve(
         tmp_path,
-        'A\tcluster1\tclone1\t4\nB\tcluster1\tclone1\t2\n'
-        'A\tcluster2\tclone1\t4\nB\tcluster2\tclone1\t2\n'
-        'A\tcluster1\tclone2\t0\nB\tcluster1\tclone2\t1\n'
-        'A\tcluster2\tclone2\t0\n',
+        'A\tcluster1\tclone2\t0\nB\tcluster1\tclone2\t0\n'
+        'A\tcluster2\tclone2\t0\nB\tcluster2\tclone2\t0\n'
+        'U\tclone2\tsample1\t0.5\n',
         clones=3,
     )
     assert (
@@ -984,10 +1083,11 @@ def test_partially_fixed_matrix_can_pass_local_validation_but_make_solver_infeas
             mu=0.03,
             ampdel=False,
             weights={'cluster1': 1, 'cluster2': 1},
+            max_homdel_size=1,
         )
         is fixed
     )
-    ilp = _build_ilp(n=3, fixed_matrix=fixed)
+    ilp = _build_ilp(n=3, fixed_matrix=fixed, max_homdel_size=1)
 
     assert ilp.run(solver_type='gurobi', timelimit=30) is None
 
@@ -1121,28 +1221,60 @@ def test_unforced_model_selection_reports_branch_specific_fixed_matrix_bound_con
         )
 
 
-def _linear_coefficients(constraint):
-    representation = generate_standard_repn(constraint.body)
-    return dict(zip((variable.name for variable in representation.linear_vars), representation.linear_coefs))
+def _tumor_copy_number_footprint(constraint):
+    clusters, clones = set(), set()
+    for variable in identify_variables(constraint.body):
+        prefix, *indices = variable.name.split('_')
+        if prefix in ('cA', 'cB') and int(indices[1]) > 1:
+            clusters.add(indices[0])
+            clones.add(indices[1])
+    return clusters, clones
 
 
-def test_python_symmetry_breaking_orders_adjacent_tumor_clones():
-    ilp = _build_ilp()
-    constraint_count = len(ilp.model.constraints)
-    symmetry_constraints = [ilp.model.constraints[index] for index in range(constraint_count - 1, constraint_count + 1)]
+def test_python_models_have_no_clone_order_constraints():
+    ilp = _build_ilp(n=4)
+    carch = copy(ilp)
+    carch.fix_u([[0.4], [0.3], [0.2], [0.1]])
+    carch.create_model()
 
-    for tumor_clone, constraint in enumerate(symmetry_constraints, start=1):
-        coefficients = _linear_coefficients(constraint)
-        for cluster_index in range(ilp.m):
-            weight = ilp.symmCoeff(cluster_index)
-            left_clone = tumor_clone + 1
-            right_clone = tumor_clone + 2
-            assert coefficients[f'cA_{cluster_index + 1}_{left_clone}'] == weight
-            assert coefficients[f'cB_{cluster_index + 1}_{left_clone}'] == weight
-            assert coefficients[f'cA_{cluster_index + 1}_{right_clone}'] == -weight
-            assert coefficients[f'cB_{cluster_index + 1}_{right_clone}'] == -weight
+    for model in (ilp.model, carch.model):
+        for constraint in model.component_data_objects(pe.Constraint):
+            clusters, clones = _tumor_copy_number_footprint(constraint)
+            assert len(clusters) < 2 or len(clones) < 2, constraint.name
 
 
-def test_cpp_symmetry_breaking_orders_adjacent_tumor_clones():
+UNSORTED_SOLUTION = (
+    [[1, 3, 1, 1], [1, 2, 1, 1]],
+    [[1, 1, 0, 0], [1, 1, 1, 1]],
+    [[0.1], [0.5], [0.3], [0.1]],
+)
+SORTED_SOLUTION = (
+    [[1, 1, 1, 3], [1, 1, 1, 2]],
+    [[1, 0, 0, 1], [1, 1, 1, 1]],
+    [[0.1], [0.3], [0.1], [0.5]],
+)
+
+
+def test_canonicalize_clone_order_sorts_tumor_clones_stably():
+    # Burdens: clone1 = 10, clone2 = 5, clone3 = 5; the clone2/clone3 tie is kept in input order
+    assert canonicalize_clone_order(*UNSORTED_SOLUTION) == SORTED_SOLUTION
+
+
+def test_finalize_solution_sorts_clones_unless_the_fixed_matrix_addresses_them(tmp_path):
+    result = (0.0, *UNSORTED_SOLUTION, ('cluster1', 'cluster2'), ('sample1',))
+
+    assert _finalize_solution(result, None)[1:4] == SORTED_SOLUTION
+
+    normal_only = _parse_and_resolve(tmp_path, 'U\tnormal\tsample1\t0.1\n', clones=4)
+    assert not normal_only.addresses_tumor_clones
+    assert _finalize_solution(result, normal_only)[1:4] == SORTED_SOLUTION
+
+    addressed = _parse_and_resolve(tmp_path, 'A\tcluster1\tclone1\t3\n', clones=4)
+    assert addressed.addresses_tumor_clones
+    assert _finalize_solution(result, addressed)[1:4] == UNSORTED_SOLUTION
+
+
+def test_cpp_models_have_no_clone_order_constraints():
     source = (Path(__file__).parents[1] / 'src' / 'ilp-min.cpp').read_text()
-    assert 'sumI1 += _cA[s][i+1] * symmCoeff(s) + _cB[s][i+1] * symmCoeff(s);' in source
+    assert 'buildSymmetryBreaking' not in source
+    assert 'sort_indexes' not in source

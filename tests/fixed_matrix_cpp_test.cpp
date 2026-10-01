@@ -9,6 +9,19 @@ int main(int argc, char** argv)
         return 2;
     }
 
+    if(std::string(argv[1]) == "--canonicalize")
+    {
+        // Burdens: clone1 = 10, clone2 = 5, clone3 = 5; the clone2/clone3 tie is kept in input order
+        IntMatrix A = {{1, 3, 1, 1}, {1, 2, 1, 1}};
+        IntMatrix B = {{1, 1, 0, 0}, {1, 1, 1, 1}};
+        DoubleMatrix U = {{0.1}, {0.5}, {0.3}, {0.1}};
+        canonicalizeCloneOrder(A, B, U);
+        const IntMatrix expectedA = {{1, 1, 1, 3}, {1, 1, 1, 2}};
+        const IntMatrix expectedB = {{1, 0, 0, 1}, {1, 1, 1, 1}};
+        const DoubleMatrix expectedU = {{0.1}, {0.3}, {0.1}, {0.5}};
+        return A == expectedA && B == expectedB && U == expectedU ? 0 : 3;
+    }
+
     try
     {
         const int clones = argc == 3 ? std::atoi(argv[2]) : 3;
@@ -68,7 +81,7 @@ int main(int argc, char** argv)
 
         if(argc == 2 &&
            (A[0][1] != 2 || B[1][2] != 1 || std::fabs(U[0][0] - 0.2) > TOL ||
-            std::fabs(U[1][0] - 0.3) > TOL || std::fabs(U[2][0] - 0.5) > TOL))
+            std::fabs(U[1][0] - 0.3) > TOL || std::fabs(U[2][0] - 0.5) > TOL || !fixed.addressesTumorClones()))
         {
             return 3;
         }

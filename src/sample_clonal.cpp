@@ -174,11 +174,12 @@ SampleClonal SampleClonal::read(const std::string& filename,
     for(std::map<std::string, int>::const_iterator sample = sampleToIdx.begin(); sample != sampleToIdx.end(); ++sample)
     {
         const std::vector<SampleClonalEntry>& entries = bySample[sample->second];
-        if(entries.size() != 2)
+        if(entries.size() < 2)
         {
             throw formatError(filename, lineNumber,
-                              "sample '" + sample->first + "' must have exactly two sample-clonal entries");
+                              "sample '" + sample->first + "' must have at least two sample-clonal entries");
         }
+        // only the first two entries calibrate the sample; any further entries are only enforced
         if(entries[0].total() == entries[1].total())
         {
             throw formatError(filename, entries[1].line,
@@ -210,8 +211,9 @@ SampleClonalCalibration SampleClonal::calibrate(const DoubleMatrix& R, const int
     result.purity = DoubleArray(samples, 0.0);
     for(int sample = 0; sample < samples; ++sample)
     {
+        // entries after the first two are enforced during solving but do not calibrate the sample
         const std::vector<SampleClonalEntry> entries = entriesForSample(sample);
-        if(entries.size() != 2)
+        if(entries.size() < 2)
         {
             throw _source + ": missing sample-clonal entries for sample index " + std::to_string(sample);
         }

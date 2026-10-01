@@ -25,7 +25,7 @@ FIXED_MATRIX_SCENARIOS = (
         id='variable-width',
     ),
 )
-FIXED_MATRIX_SYMMETRY_SCENARIOS = (
+FIXED_MATRIX_THREE_CLONE_SCENARIOS = (
     pytest.param(
         os.path.join(this_dir, 'data', 'fw', 'bulk'),
         os.path.join(this_dir, 'data', 'fw', 'fixed-matrix-n3.tsv'),
@@ -117,7 +117,8 @@ def assert_solve_output(result_path, input_prefix, fixed_path, clones):
     proportion_columns = [f'u_{label}' for label in clone_labels]
     proportions = result.groupby('SAMPLE', sort=False)[proportion_columns].first()
     assert ((proportions.sum(axis=1) - 1).abs() <= 0.001).all()
-    assert_fixed_matrix_entries(result_path, fixed_path)
+    if fixed_path is not None:
+        assert_fixed_matrix_entries(result_path, fixed_path)
 
 
 def assert_canonical_clone_order(result_path, seg_path, clones):
@@ -135,7 +136,9 @@ def assert_canonical_clone_order(result_path, seg_path, clones):
     assert burdens == sorted(burdens)
 
 
-def run_fixed_matrix_solve(output_folder, input_prefix, fixed_path, solver, mode):
+def run_fixed_matrix_solve(output_folder, input_prefix, fixed_path, solver, mode, clones=None):
+    if clones is None:
+        clones = parse_fixed_matrix(fixed_path).clones
     old_value = config.compute_cn.solver
     config.compute_cn.solver = solver
     try:
@@ -146,7 +149,7 @@ def run_fixed_matrix_solve(output_folder, input_prefix, fixed_path, solver, mode
                 str(output_folder),
                 '-i',
                 input_prefix,
-                '-n{}'.format(parse_fixed_matrix(fixed_path).clones),
+                '-n{}'.format(clones),
                 '-p',
                 '1',
                 '-v',
@@ -168,10 +171,10 @@ def run_fixed_matrix_solve(output_folder, input_prefix, fixed_path, solver, mode
                 '-td',
                 '0.1',
                 '--diploid',
-                '--fixed-matrix',
-                fixed_path,
             ]
         )
+        if fixed_path is not None:
+            args.extend(['--fixed-matrix', fixed_path])
         main(args=args)
     finally:
         config.compute_cn.solver = old_value
@@ -195,18 +198,28 @@ def test_fixed_matrix_solve_binning_scenario(
     assert_solve_output(result_path, input_prefix, fixed_path, clones=2)
 
 
-@pytest.mark.parametrize(('input_prefix', 'fixed_path'), FIXED_MATRIX_SYMMETRY_SCENARIOS)
+@pytest.mark.parametrize(('input_prefix', 'fixed_path'), FIXED_MATRIX_THREE_CLONE_SCENARIOS)
 @pytest.mark.parametrize('solver', ('cpp', 'gurobi'))
-def test_fixed_matrix_solve_preserves_canonical_clone_order(
+def test_fixed_matrix_solve_three_clones_honors_addressed_clones(
     tmp_path,
     input_prefix,
     fixed_path,
     solver,
     gurobi_runtime_available,
 ):
+    # The fixture addresses clone1, so clone labels are kept rather than reordered by burden
     require_solver(solver, gurobi_runtime_available)
     result_path = run_fixed_matrix_solve(tmp_path, input_prefix, fixed_path, solver, mode=1)
     assert_solve_output(result_path, input_prefix, fixed_path, clones=3)
+
+
+@pytest.mark.parametrize('solver', ('cpp', 'gurobi'))
+@pytest.mark.parametrize('mode', SOLVE_MODES[:2])
+def test_solve_reports_tumor_clones_in_canonical_order(tmp_path, solver, mode, gurobi_runtime_available):
+    require_solver(solver, gurobi_runtime_available)
+    input_prefix = os.path.join(DATA_FOLDER, 'bulk')
+    result_path = run_fixed_matrix_solve(tmp_path, input_prefix, None, solver, mode, clones=3)
+    assert_solve_output(result_path, input_prefix, None, clones=3)
     assert_canonical_clone_order(result_path, input_prefix + '.seg', clones=3)
 
 

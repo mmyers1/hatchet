@@ -185,6 +185,51 @@ IntArray sort_indexes(const IntArray &v) {
     return idx;
 }
 
+void canonicalizeCloneOrder(IntMatrix &A, IntMatrix &B, DoubleMatrix &U)
+{
+    if(A.empty())
+    {
+        return;
+    }
+    const int n = A[0].size();
+    std::vector<long long> burden(n, 0);
+    for(int s = 0; s < A.size(); ++s)
+    {
+        for(int i = 1; i < n; ++i)
+        {
+            burden[i] += static_cast<long long>(s + 1) * (A[s][i] + B[s][i]);
+        }
+    }
+
+    IntArray order(n);
+    std::iota(order.begin(), order.end(), 0);
+    std::stable_sort(order.begin() + 1, order.end(),
+                     [&burden](const int left, const int right) {return burden[left] < burden[right];});
+
+    for(int s = 0; s < A.size(); ++s)
+    {
+        IntArray rowA(n);
+        IntArray rowB(n);
+        for(int i = 0; i < n; ++i)
+        {
+            rowA[i] = A[s][order[i]];
+            rowB[i] = B[s][order[i]];
+        }
+        A[s] = rowA;
+        B[s] = rowB;
+    }
+
+    if(U.size() == n)
+    {
+        DoubleMatrix sortedU(n);
+        for(int i = 0; i < n; ++i)
+        {
+            sortedU[i] = U[order[i]];
+        }
+        U = sortedU;
+    }
+}
+
 DoubleMatrix transpose(const DoubleMatrix &M)
 {
     DoubleMatrix T(M[0].size(), DoubleArray(M.size(), 0.0));

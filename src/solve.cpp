@@ -125,7 +125,7 @@ int main(int argc, char** argv)
             IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
                           argparse.forceAMPDEL(), cn, FA, FB, instance.w(), fixedMatrix, sampleClonal, purities, argparse.v());
             ilp.init();
-            ilp.hotStart(cd.getACN(), cd.getBCN());
+            ilp.hotStart(cd.getACN(), cd.getBCN(), cd.getU());
             ilp.solve(argparse.s(), argparse.m(), argparse.j());
 
             log("Runtime:\t" + std::to_string(ilp.runtime()), VERBOSITY_t::ESSENTIAL, argparse.v());
@@ -185,6 +185,13 @@ int main(int argc, char** argv)
 
         } else {
             throw "Unknown solving mode!";
+        }
+
+        // Tumor clones are interchangeable unless the fixed matrix addresses them, so report them in a canonical
+        // order instead of constraining the order inside the ILP
+        if(!fixedMatrix.addressesTumorClones())
+        {
+            canonicalizeCloneOrder(ACN, BCN, U);
         }
 
         log("Reading the input BBC file", VERBOSITY_t::ESSENTIAL, argparse.v());

@@ -129,16 +129,17 @@ def _validate_entries(entries, source):
         by_sample.setdefault(entry.sample, []).append(entry)
 
     for sample, sample_entries in by_sample.items():
-        if len(sample_entries) != 2:
+        if len(sample_entries) < 2:
             raise _format_error(
                 source,
                 sample_entries[-1].line_number,
-                f'sample {sample!r} must have exactly two entries, found {len(sample_entries)}',
+                f'sample {sample!r} must have at least two entries, found {len(sample_entries)}',
             )
-        if len({entry.total_copy_number for entry in sample_entries}) != 2:
+        # only the first two entries calibrate the sample; any further entries are only enforced
+        if len({entry.total_copy_number for entry in sample_entries[:2]}) != 2:
             raise _format_error(
                 source,
-                sample_entries[-1].line_number,
+                sample_entries[1].line_number,
                 f'sample {sample!r} must have two distinct total copy-number states',
             )
 
@@ -205,8 +206,8 @@ def parse_sample_clonal_inline(value, source='--sample-clonal'):
         sample, raw_states = (part.strip() for part in sample_part.split('=', 1))
         _validate_inline_identifier(sample, 'sample', source, sample_number)
         states = raw_states.split(',')
-        if len(states) != 2:
-            raise _format_error(source, sample_number, f'sample {sample!r} must have exactly two entries')
+        if len(states) < 2:
+            raise _format_error(source, sample_number, f'sample {sample!r} must have at least two entries')
 
         for raw_state in states:
             state_fields = tuple(field.strip() for field in raw_state.strip().split(':'))
@@ -298,7 +299,8 @@ def derive_sample_clonal_calibration(resolved, rdr, purity_tolerance=PURITY_TOLE
     purity = []
 
     for sample_index, sample_id in enumerate(resolved.sample_ids):
-        first, second = resolved.entries_for_sample(sample_index)
+        # entries after the first two are enforced during solving but do not calibrate the sample
+        first, second = resolved.entries_for_sample(sample_index)[:2]
         rdr_first = float(rdr.iloc[first.cluster_index, sample_index])
         rdr_second = float(rdr.iloc[second.cluster_index, sample_index])
         total_first = first.total_copy_number

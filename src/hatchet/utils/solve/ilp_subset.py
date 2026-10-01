@@ -148,7 +148,8 @@ class ILPSubset:
         d = self.d
         _M = self.M
         _base = self.base
-        purities = self.purities
+        bounds, conflicts = self.compute_fixed_bounds()
+        self._bounds = bounds
 
         model = pe.ConcreteModel()
 
@@ -178,16 +179,10 @@ class ILPSubset:
 
         if mode_t in ('FULL', 'CARCH'):
             for _m in range(m):
-
-                cluster_id = f_a.index[_m]
-
-                # upper bound for solver
-                ub = max(sum(copy_numbers.get(cluster_id, (0, 0))), cn_max)
-
                 for _n in range(n):
-                    self.cA[_m][_n] = pe.Var(bounds=(0, ub), domain=pe.Integers)
+                    self.cA[_m][_n] = pe.Var(bounds=bounds[('A', _m, _n)], domain=pe.Integers)
                     model.add_component(f'cA_{_m + 1}_{_n + 1}', self.cA[_m][_n])
-                    self.cB[_m][_n] = pe.Var(bounds=(0, ub), domain=pe.Integers)
+                    self.cB[_m][_n] = pe.Var(bounds=bounds[('B', _m, _n)], domain=pe.Integers)
                     model.add_component(f'cB_{_m + 1}_{_n + 1}', self.cB[_m][_n])
 
             if ampdel:
@@ -216,10 +211,13 @@ class ILPSubset:
                             bitcB[(_b, _m, _n)],
                         )
 
+        self._adA, self._adB = adA, adB
+        self._bitcA, self._bitcB = bitcA, bitcB
+
         if mode_t in ('FULL', 'UARCH'):
             for _n in range(n):
                 for _k in range(k):
-                    self.u[_n][_k] = pe.Var(bounds=(0, 1), domain=pe.Reals)
+                    self.u[_n][_k] = pe.Var(bounds=bounds[('U', _n, _k)], domain=pe.Reals)
                     model.add_component(f'u_{_n + 1}_{_k + 1}', self.u[_n][_k])
 
         vA = {}
@@ -246,6 +244,7 @@ class ILPSubset:
                 for _k in range(k):
                     x[(_n, _k)] = pe.Var(domain=pe.Binary)
                     model.add_component(f'x_{_n + 1}_{_k + 1}', x[(_n, _k)])
+        self._x = x
 
         # buildOptionalVariables
         z = {}
@@ -311,10 +310,6 @@ class ILPSubset:
 
         if (mode_t == 'FULL') or (d > 0 and mode_t == 'CARCH'):
             for _m in range(m):
-                cluster_id = f_a.index[_m]
-                # upper bound for solver
-                ub = max(sum(copy_numbers.get(cluster_id, (0, 0))), cn_max)
-
                 for _n in range(n):
                     sum_a = 0
                     sum_b = 0
@@ -324,13 +319,6 @@ class ILPSubset:
 
                     model.constraints.add(self.cA[_m][_n] == sum_a)
                     model.constraints.add(self.cB[_m][_n] == sum_b)
-                    model.constraints.add(self.cA[_m][_n] + self.cB[_m][_n] <= ub)
-
-        #  this is where we fix the purities if user provides purity values for (tumor) samples
-        # in each sample s, clone 0 (healty & normal) should have the purity 1 - purity_s
-        if mode_t in ('FULL', 'UARCH') and purities:
-            for i, p in enumerate(purities):
-                model.constraints.add(self.u[0][i] == 1 - p)
 
         if mode_t == 'CARCH':
             # TODO: These loops can be collapsed once validation against C++ is complete
@@ -345,17 +333,8 @@ class ILPSubset:
                     model.constraints.add(fA[(_m, _k)] == _sumA)
                     model.constraints.add(fB[(_m, _k)] == _sumB)
 
-                cluster_id = f_a.index[_m]
-                # upper bound for solver
-                ub = max(sum(copy_numbers.get(cluster_id, (0, 0))), cn_max)
-                for _n in range(n):
-                    model.constraints.add(self.cA[_m][_n] + self.cB[_m][_n] <= ub)
-
         if mode_t in ('FULL', 'CARCH'):
-            for _m in range(m):
-                model.constraints.add(self.cA[_m][0] == 1)
-                model.constraints.add(self.cB[_m][0] == 1)
-
+            self.build_copy_number_limits(model)
             self.build_homdel_constraints(model)
 
             if ampdel:
@@ -431,11 +410,7 @@ class ILPSubset:
                         _sum_l1 += z[(_m, _n, _d + 1)] * self.symmCoeff(_n)
                         model.constraints.add(_sum_l <= _sum_l1)
 
-        if mode_t in ('FULL', 'CARCH'):
-            self.build_symmetry_breaking(model)
-            self.fix_given_cn(model)
-
-        self.apply_fixed_matrix_constraints(model)
+        self.apply_fixed_value_conflicts(model, conflicts)
 
         if mode_t == 'FULL':
             self.hot_start()
@@ -452,6 +427,88 @@ class ILPSubset:
         if pprint:
             print(str(self))
 
+    def copy_number_upper_bound(self, cluster_id):
+        return max(sum(self.copy_numbers.get(cluster_id, (0, 0))), self.cn_max)
+
+    def compute_fixed_bounds(self):
+        """Derive variable bounds from fixed values.
+
+        Sources are the normal clone, clonal copy numbers, known purities, fixed-matrix entries, and sample-clonal
+        states. Returns a mapping ('A'|'B'|'U', row, column) -> (lower, upper) for the variables optimized in the
+        current mode, and a list of (matrix, row, column, value) values that disagree with an earlier bound. Those
+        conflicts are enforced as explicit equalities, so the model stays infeasible as it was with equality rows.
+        """
+        bounds = {}
+        conflicts = []
+
+        def fix(matrix, row, column, value):
+            lower, upper = bounds[(matrix, row, column)]
+            if lower <= value <= upper:
+                bounds[(matrix, row, column)] = (value, value)
+            else:
+                conflicts.append((matrix, row, column, value))
+
+        copy_number_mode = self.mode in ('FULL', 'CARCH')
+        proportion_mode = self.mode in ('FULL', 'UARCH')
+
+        if copy_number_mode:
+            for _m, cluster_id in enumerate(self.cluster_ids):
+                ub = self.copy_number_upper_bound(cluster_id)
+                for _n in range(self.n):
+                    bounds[('A', _m, _n)] = (0, ub)
+                    bounds[('B', _m, _n)] = (0, ub)
+                fix('A', _m, 0, 1)
+                fix('B', _m, 0, 1)
+                if cluster_id in self.copy_numbers:
+                    cn_a, cn_b = self.copy_numbers[cluster_id]
+                    for _n in range(1, self.n):
+                        fix('A', _m, _n, cn_a)
+                        fix('B', _m, _n, cn_b)
+
+        if proportion_mode:
+            for _n in range(self.n):
+                for _k in range(self.k):
+                    bounds[('U', _n, _k)] = (0, 1)
+            # in each sample with a known purity, clone 0 (healthy & normal) has proportion 1 - purity
+            if self.purities:
+                for _k, purity in enumerate(self.purities):
+                    fix('U', 0, _k, 1 - purity)
+
+        if self.fixed_matrix is not None:
+            for entry in self.fixed_matrix.entries:
+                if entry.matrix in ('A', 'B') and copy_number_mode:
+                    fix(entry.matrix, entry.row_index, entry.column_index, entry.value)
+                elif entry.matrix == 'U' and proportion_mode:
+                    fix('U', entry.row_index, entry.column_index, entry.value)
+
+        if self.sample_clonal is not None:
+            if self.mode == 'CARCH':
+                for entry in self.sample_clonal.entries:
+                    for clone_index in range(1, self.n):
+                        if self._fixed_u[clone_index][entry.sample_index] > self.tol:
+                            fix('A', entry.cluster_index, clone_index, entry.cn_a)
+                            fix('B', entry.cluster_index, clone_index, entry.cn_b)
+            elif self.mode == 'UARCH':
+                for sample_index in range(self.k):
+                    entries = self.sample_clonal.entries_for_sample(sample_index)
+                    for clone_index in range(1, self.n):
+                        if any(
+                            int(self._fixed_cA[entry.cluster_index][clone_index]) != entry.cn_a
+                            or int(self._fixed_cB[entry.cluster_index][clone_index]) != entry.cn_b
+                            for entry in entries
+                        ):
+                            fix('U', clone_index, sample_index, 0)
+
+        return bounds, conflicts
+
+    def build_copy_number_limits(self, model):
+        # rows already implied by the variable bounds (e.g. the normal clone or clonal clusters) are omitted
+        for _m, cluster_id in enumerate(self.cluster_ids):
+            ub = self.copy_number_upper_bound(cluster_id)
+            for _n in range(self.n):
+                if self._bounds[('A', _m, _n)][1] + self._bounds[('B', _m, _n)][1] > ub:
+                    model.constraints.add(self.cA[_m][_n] + self.cB[_m][_n] <= ub)
+
     def build_homdel_constraints(self, model):
         model.homdel_constraints = pe.ConstraintList()
         cluster_weights = [float(self.w[cluster_id]) for cluster_id in self.cluster_ids]
@@ -462,37 +519,25 @@ class ILPSubset:
         for cluster_index, cluster_weight in enumerate(cluster_weights):
             if cluster_weight > 0 and cluster_weight / total_weight >= self.max_homdel_size:
                 for clone_index in range(1, self.n):
+                    lower_a = self._bounds[('A', cluster_index, clone_index)][0]
+                    lower_b = self._bounds[('B', cluster_index, clone_index)][0]
+                    if lower_a + lower_b >= 1:
+                        continue  # already implied by the variable bounds
                     model.homdel_constraints.add(
                         self.cA[cluster_index][clone_index] + self.cB[cluster_index][clone_index] >= 1
                     )
 
-    def build_symmetry_breaking(self, model):
-        for i in range(1, self.n - 1):
-            _sum1 = 0
-            _sum2 = 0
-            for _m in range(self.m):
-                _symCoeff = self.symmCoeff(_m)
-                _sum1 += self.cA[_m][i] * _symCoeff + self.cB[_m][i] * _symCoeff
-                _sum2 += self.cA[_m][i + 1] * _symCoeff + self.cB[_m][i + 1] * _symCoeff
-            model.constraints.add(_sum1 <= _sum2)
-
-    def apply_fixed_matrix_constraints(self, model):
-        if self.fixed_matrix is None:
-            return
-
-        model.fixed_matrix_constraints = pe.ConstraintList()
-        for entry in self.fixed_matrix.entries:
-            if entry.matrix == 'A' and self.mode in ('FULL', 'CARCH'):
-                model.fixed_matrix_constraints.add(self.cA[entry.row_index][entry.column_index] == entry.value)
-            elif entry.matrix == 'B' and self.mode in ('FULL', 'CARCH'):
-                model.fixed_matrix_constraints.add(self.cB[entry.row_index][entry.column_index] == entry.value)
-            elif entry.matrix == 'U' and self.mode in ('FULL', 'UARCH'):
-                model.fixed_matrix_constraints.add(self.u[entry.row_index][entry.column_index] == entry.value)
+    def apply_fixed_value_conflicts(self, model, conflicts):
+        model.fixed_value_conflicts = pe.ConstraintList()
+        variables = {'A': self.cA, 'B': self.cB, 'U': self.u}
+        for matrix, row, column, value in conflicts:
+            model.fixed_value_conflicts.add(variables[matrix][row][column] == value)
 
     def apply_sample_clonal_constraints(self, model, presence):
         if self.sample_clonal is None:
             return
 
+        # CARCH states, UARCH exclusions, and derived purities are variable bounds (see compute_fixed_bounds)
         model.sample_clonal_constraints = pe.ConstraintList()
         if self.mode == 'FULL':
             for entry in self.sample_clonal.entries:
@@ -510,37 +555,12 @@ class ILPSubset:
                     model.sample_clonal_constraints.add(
                         entry.cn_b - self.cB[entry.cluster_index][clone_index] <= self.cn_max * (1 - clone_present)
                     )
-        elif self.mode == 'CARCH':
-            for entry in self.sample_clonal.entries:
-                for clone_index in range(1, self.n):
-                    if self._fixed_u[clone_index][entry.sample_index] > self.tol:
-                        model.sample_clonal_constraints.add(self.cA[entry.cluster_index][clone_index] == entry.cn_a)
-                        model.sample_clonal_constraints.add(self.cB[entry.cluster_index][clone_index] == entry.cn_b)
-        elif self.mode == 'UARCH':
-            for sample_index in range(self.k):
-                entries = self.sample_clonal.entries_for_sample(sample_index)
-                for clone_index in range(1, self.n):
-                    if any(
-                        int(self._fixed_cA[entry.cluster_index][clone_index]) != entry.cn_a
-                        or int(self._fixed_cB[entry.cluster_index][clone_index]) != entry.cn_b
-                        for entry in entries
-                    ):
-                        model.sample_clonal_constraints.add(self.u[clone_index][sample_index] == 0)
 
     def overlay_fixed_matrix(self, matrix, values):
         if self.fixed_matrix is None:
             return
         for entry in self.fixed_matrix.entries_for(matrix):
             values[entry.row_index][entry.column_index] = entry.value
-
-    def fix_given_cn(self, model):
-        for _m in range(self.m):
-            cluster_id = self.f_a.index[_m]
-            if cluster_id in self.copy_numbers:
-                _cnA, _cnB = self.copy_numbers[cluster_id]
-                for _n in range(1, self.n):
-                    model.constraints.add(self.cA[_m][_n] == _cnA)
-                    model.constraints.add(self.cB[_m][_n] == _cnB)
 
     def first_hot_start(self):
 
@@ -606,34 +626,43 @@ class ILPSubset:
                         assert hcA[_m][_n] >= 0
                         assert hcB[_m][_n] >= 0
 
-                self.overlay_fixed_matrix('A', hcA)
-                self.overlay_fixed_matrix('B', hcB)
+        self.overlay_fixed_matrix('A', hcA)
+        self.overlay_fixed_matrix('B', hcB)
         return hcA, hcB
 
-    def hot_start(self, f_a=None, f_b=None):
-        def get_rank(hcA, hcB):
-            # m, n = hcA.shape
-            m, n = len(hcA), len(hcA[0])
-            rank = np.zeros(n)
-            rank[0] = -1
-            for _m in range(m):
-                for _n in range(1, n):
-                    rank[_n] += hcA[_m][_n] * self.symmCoeff(_m) + hcB[_m][_n] * self.symmCoeff(_m)
-
-            return rank
-
+    def hot_start(self, f_a=None, f_b=None, u=None):
         if f_a is None and f_b is None:
             f_a, f_b = self.first_hot_start()
-        if self.fixed_matrix is None:
-            rank = get_rank(f_a, f_b)
-            rank_indices = np.argsort(rank)
-        else:
-            rank_indices = np.arange(self.n)
 
+        # Clone columns are used as given: the model has no clone-order constraint, and in CARCH mode (and in FULL
+        # mode when u is supplied) the column identities are tied to the proportions.
         for _m in range(self.m):
-            for _n in range(0, self.n):
-                self.cA[_m][rank_indices[_n]].value = f_a[_m][_n]
-                self.cB[_m][rank_indices[_n]].value = f_b[_m][_n]
+            start_a, start_b = [], []
+            for _n in range(self.n):
+                # Values are clamped to the variable bounds, which also hold states fixed only in this model (e.g. the
+                # sample-clonal states of clones present in a CARCH step's U) that a shared first hot start cannot know.
+                lower_a, upper_a = self._bounds[('A', _m, _n)]
+                lower_b, upper_b = self._bounds[('B', _m, _n)]
+                value_a = min(max(int(f_a[_m][_n]), lower_a), upper_a)
+                value_b = min(max(int(f_b[_m][_n]), lower_b), upper_b)
+                start_a.append(value_a)
+                start_b.append(value_b)
+                self.cA[_m][_n].value = value_a
+                self.cB[_m][_n].value = value_b
+                for _b in range(self.M):
+                    if (_b, _m, _n) in self._bitcA:
+                        self._bitcA[(_b, _m, _n)].value = (value_a >> _b) & 1
+                        self._bitcB[(_b, _m, _n)].value = (value_b >> _b) & 1
+            if _m in self._adA:
+                self._adA[_m].value = int(any(value > self.base for value in start_a[1:]))
+                self._adB[_m].value = int(any(value > self.base for value in start_b[1:]))
+
+        if u is not None and self.mode == 'FULL':
+            for _n in range(self.n):
+                for _k in range(self.k):
+                    self.u[_n][_k].value = float(u[_n][_k])
+                    if _n > 0 and (_n, _k) in self._x:
+                        self._x[(_n, _k)].value = int(u[_n][_k] > self.tol)
         self.warmstart = True
 
     def fix_u(self, u):
@@ -988,7 +1017,8 @@ class ILPSubsetSplit(ILPSubset):
         d = self.d
         _M = self.M
         _base = self.base
-        purities = self.purities
+        bounds, conflicts = self.compute_fixed_bounds()
+        self._bounds = bounds
 
         model = pe.ConcreteModel()
 
@@ -1022,16 +1052,10 @@ class ILPSubsetSplit(ILPSubset):
 
         if mode_t in ('FULL', 'CARCH'):
             for _m in range(m):
-
-                cluster_id = f_a.index[_m]
-
-                # upper bound for solver
-                ub = max(sum(copy_numbers.get(cluster_id, (0, 0))), cn_max)
-
                 for _n in range(n):
-                    self.cA[_m][_n] = pe.Var(bounds=(0, ub), domain=pe.Integers)
+                    self.cA[_m][_n] = pe.Var(bounds=bounds[('A', _m, _n)], domain=pe.Integers)
                     model.add_component(f'cA_{_m + 1}_{_n + 1}', self.cA[_m][_n])
-                    self.cB[_m][_n] = pe.Var(bounds=(0, ub), domain=pe.Integers)
+                    self.cB[_m][_n] = pe.Var(bounds=bounds[('B', _m, _n)], domain=pe.Integers)
                     model.add_component(f'cB_{_m + 1}_{_n + 1}', self.cB[_m][_n])
 
             if ampdel:
@@ -1060,10 +1084,13 @@ class ILPSubsetSplit(ILPSubset):
                             bitcB[(_b, _m, _n)],
                         )
 
+        self._adA, self._adB = adA, adB
+        self._bitcA, self._bitcB = bitcA, bitcB
+
         if mode_t in ('FULL', 'UARCH'):
             for _n in range(n):
                 for _k in range(k):
-                    self.u[_n][_k] = pe.Var(bounds=(0, 1), domain=pe.Reals)
+                    self.u[_n][_k] = pe.Var(bounds=bounds[('U', _n, _k)], domain=pe.Reals)
                     model.add_component(f'u_{_n + 1}_{_k + 1}', self.u[_n][_k])
 
         vA = {}
@@ -1090,6 +1117,7 @@ class ILPSubsetSplit(ILPSubset):
                 for _k in range(k):
                     x[(_n, _k)] = pe.Var(domain=pe.Binary)
                     model.add_component(f'x_{_n + 1}_{_k + 1}', x[(_n, _k)])
+        self._x = x
 
         # buildOptionalVariables
         z = {}
@@ -1161,10 +1189,6 @@ class ILPSubsetSplit(ILPSubset):
 
         if (mode_t == 'FULL') or (d > 0 and mode_t == 'CARCH'):
             for _m in range(m):
-                cluster_id = f_a.index[_m]
-                # upper bound for solver
-                ub = max(sum(copy_numbers.get(cluster_id, (0, 0))), cn_max)
-
                 for _n in range(n):
                     sum_a = 0
                     sum_b = 0
@@ -1174,11 +1198,6 @@ class ILPSubsetSplit(ILPSubset):
 
                     model.constraints.add(self.cA[_m][_n] == sum_a)
                     model.constraints.add(self.cB[_m][_n] == sum_b)
-                    model.constraints.add(self.cA[_m][_n] + self.cB[_m][_n] <= ub)
-
-        if mode_t in ('FULL', 'UARCH') and purities:
-            for sample_index, purity in enumerate(purities):
-                model.constraints.add(self.u[0][sample_index] == 1 - purity)
 
         if mode_t == 'CARCH':
             # TODO: These loops can be collapsed once validation against C++ is complete
@@ -1193,17 +1212,8 @@ class ILPSubsetSplit(ILPSubset):
                     model.constraints.add(fA[(_m, _k)] == _sumA)
                     model.constraints.add(fB[(_m, _k)] == _sumB)
 
-                cluster_id = f_a.index[_m]
-                # upper bound for solver
-                ub = max(sum(copy_numbers.get(cluster_id, (0, 0))), cn_max)
-                for _n in range(n):
-                    model.constraints.add(self.cA[_m][_n] + self.cB[_m][_n] <= ub)
-
         if mode_t in ('FULL', 'CARCH'):
-            for _m in range(m):
-                model.constraints.add(self.cA[_m][0] == 1)
-                model.constraints.add(self.cB[_m][0] == 1)
-
+            self.build_copy_number_limits(model)
             self.build_homdel_constraints(model)
 
             if ampdel:
@@ -1279,11 +1289,7 @@ class ILPSubsetSplit(ILPSubset):
                         _sum_l1 += z[(_m, _n, _d + 1)] * self.symmCoeff(_n)
                         model.constraints.add(_sum_l <= _sum_l1)
 
-        if mode_t in ('FULL', 'CARCH'):
-            self.build_symmetry_breaking(model)
-            self.fix_given_cn(model)
-
-        self.apply_fixed_matrix_constraints(model)
+        self.apply_fixed_value_conflicts(model, conflicts)
 
         if mode_t == 'FULL':
             self.hot_start()

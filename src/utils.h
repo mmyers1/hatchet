@@ -103,6 +103,8 @@ std::string ltrim(const std::string &s);
 std::string trim(const std::string &s);
 
 IntArray sort_indexes(const IntArray &v);
+/// Stable-sort tumor clones (columns 1.. of A and B, rows 1.. of U) by nondecreasing sum_s (s + 1)(A[s][i] + B[s][i])
+void canonicalizeCloneOrder(IntMatrix &A, IntMatrix &B, DoubleMatrix &U);
 DoubleMatrix transpose(const DoubleMatrix &M);
 
 std::string toString(const IntArray &M);

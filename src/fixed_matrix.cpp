@@ -435,40 +435,6 @@ void FixedMatrix::validate(const int cmax,
                               "remaining U proportion is below the minimum clone proportion");
         }
     }
-
-    for(int clone = 1; clone < _clones - 1; ++clone)
-    {
-        bool complete = true;
-        double left = 0.0;
-        double right = 0.0;
-        int errorLine = 1;
-        for(int segment = 0; segment < static_cast<int>(weights.size()); ++segment)
-        {
-            for(int matrix = MATRIX_A; matrix <= MATRIX_B; ++matrix)
-            {
-                std::map<std::tuple<int, int, int>, const FixedMatrixEntry*>::const_iterator leftEntry =
-                    values.find(std::make_tuple(matrix, segment, clone));
-                std::map<std::tuple<int, int, int>, const FixedMatrixEntry*>::const_iterator rightEntry =
-                    values.find(std::make_tuple(matrix, segment, clone + 1));
-                if(leftEntry == values.end() || rightEntry == values.end())
-                {
-                    complete = false;
-                    break;
-                }
-                left += leftEntry->second->value * (segment + 1);
-                right += rightEntry->second->value * (segment + 1);
-                errorLine = std::max(errorLine, rightEntry->second->line);
-            }
-            if(!complete)
-            {
-                break;
-            }
-        }
-        if(complete && left > right)
-        {
-            throw formatError(_source, errorLine, "fully fixed clone burdens violate canonical clone order");
-        }
-    }
 }
 
 

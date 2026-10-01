@@ -52,6 +52,19 @@ public:
         return _entries;
     }
 
+    /// True when any entry refers to a tumor clone, which pins that clone's column identity
+    bool addressesTumorClones() const
+    {
+        for(std::vector<FixedMatrixEntry>::const_iterator it = _entries.begin(); it != _entries.end(); ++it)
+        {
+            if((it->matrix == MATRIX_U ? it->row : it->column) > 0)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void validate(const int cmax,
                   const double mu,
                   const int base,

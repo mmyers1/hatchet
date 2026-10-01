@@ -1,5 +1,6 @@
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+import logging
 import os
 import re
 import shutil
@@ -7,7 +8,7 @@ import subprocess
 
 import pandas as pd
 import pytest
-from pyomo.environ import value
+from pyomo.environ import Var, value
 
 from hatchet import config
 from hatchet.bin.HATCHet import (
@@ -93,7 +94,7 @@ Tumor 2\tcluster-c\t1\t0
         ),
         (
             f'{FORMAT_MARKER}\nsample\tcluster\tcn_a\tcn_b\ns1\tc1\t1\t1\n',
-            'must have exactly two entries',
+            'must have at least two entries',
         ),
         (
             f'{FORMAT_MARKER}\nsample\tcluster\tcn_a\tcn_b\n' 's1\tc1\t1\t1\ns1\tc1\t2\t1\n',
@@ -119,7 +120,7 @@ def test_file_parser_rejects_invalid_specs(tmp_path, contents, message):
     [
         ('', 'empty sample specification'),
         ('sample:c1:1:1,c2:2:1', 'expected SAMPLE='),
-        ('sample=c1:1:1', 'exactly two entries'),
+        ('sample=c1:1:1', 'at least two entries'),
         ('sample=c1:1:1,c2:2', 'expected each state'),
         ('sample=c1:1:1,c1:2:1', 'duplicate sample-clonal entry'),
         ('sample=c1:1:1,c2:2:0', 'distinct total copy-number states'),
@@ -160,6 +161,24 @@ def test_calibration_uses_general_theorem_and_is_pair_order_invariant():
     assert forward.purity_by_sample() == pytest.approx({'Tumor': 0.5})
     assert reverse.gamma == pytest.approx(forward.gamma)
     assert reverse.purity == pytest.approx(forward.purity)
+
+
+def test_calibration_ignores_states_after_first_two(tmp_path):
+    rdr = pd.DataFrame({'Tumor': [2.0 / 3.0, 2.5 / 3.0, 5.0]}, index=('c1', 'c2', 'c3'))
+    inline = parse_sample_clonal_inline('Tumor=c1:1:1,c2:2:1,c3:1:1')
+    from_file = parse_sample_clonal_file(
+        _write_sample_clonal(
+            tmp_path,
+            f'{FORMAT_MARKER}\nsample\tcluster\tcn_a\tcn_b\nTumor\tc1\t1\t1\nTumor\tc2\t2\t1\nTumor\tc3\t1\t1\n',
+        )
+    )
+
+    for parsed in (inline, from_file):
+        resolved = resolve_sample_clonal(parsed, rdr.index, rdr.columns)
+        assert [entry.cluster_index for entry in resolved.entries_for_sample(0)] == [0, 1, 2]
+        calibration = derive_sample_clonal_calibration(resolved, rdr)
+        assert calibration.gamma == pytest.approx((3.0,))
+        assert calibration.purity == pytest.approx((0.5,))
 
 
 def test_calibration_supports_two_nonbaseline_states():
@@ -654,7 +673,9 @@ def test_compute_cn_solves_with_sample_clonal_parameter_cpp(
     )
 
 
-def _run_conflicting_sample_clonal_solve(tmp_path, monkeypatch, solver, clone_spec, cpp_solver=None):
+def _run_conflicting_sample_clonal_solve(
+    tmp_path, monkeypatch, solver, clone_spec, cpp_solver=None, extra_tumor_a_state=''
+):
     input_prefix = _write_conflicting_solver_inputs(tmp_path)
     output_folder = tmp_path / 'output'
     output_folder.mkdir()
@@ -686,18 +707,20 @@ def _run_conflicting_sample_clonal_solve(tmp_path, monkeypatch, solver, clone_sp
             '6',
             '--diploid',
             '--sample-clonal',
-            'TumorA=1:1:1,2:2:1;TumorB=1:2:1,3:1:1',
+            f'TumorA=1:1:1,2:2:1{extra_tumor_a_state};TumorB=1:2:1,3:1:1',
         ]
     )
     compute_cn(args=args)
     return output_folder
 
 
+@pytest.mark.parametrize('extra_tumor_a_state', ('', ',3:2:0'), ids=('two-states', 'three-states'))
 @pytest.mark.parametrize('solver', ('gurobi', 'cpp'))
 def test_compute_cn_separates_samples_with_conflicting_sample_clonal_states(
     tmp_path,
     monkeypatch,
     solver,
+    extra_tumor_a_state,
     sample_clonal_cpp_solver,
 ):
     if solver == 'gurobi':
@@ -711,6 +734,7 @@ def test_compute_cn_separates_samples_with_conflicting_sample_clonal_states(
         solver,
         '3',
         cpp_solver=sample_clonal_cpp_solver,
+        extra_tumor_a_state=extra_tumor_a_state,
     )
     result = pd.read_csv(output_folder / 'best.bbc.ucn', sep='\t')
     proportions = result.groupby('SAMPLE', sort=False)[['u_clone1', 'u_clone2']].first()
@@ -730,6 +754,9 @@ def test_compute_cn_separates_samples_with_conflicting_sample_clonal_states(
     assert states.loc[2, f'cn_clone{clone_a}'] == '2|1'
     assert states.loc[1, f'cn_clone{clone_b}'] == '2|1'
     assert states.loc[3, f'cn_clone{clone_b}'] == '1|1'
+    if extra_tumor_a_state:
+        # cluster 3 has BAF 0.5 in TumorA, so (2, 0) is present only because the additional state is enforced
+        assert states.loc[3, f'cn_clone{clone_a}'] == '2|0'
 
 
 def test_compute_cn_sample_clonal_supports_clone_count_range(tmp_path, monkeypatch):
@@ -992,14 +1019,42 @@ def test_full_model_creates_presence_variables_when_minprop_is_zero():
     assert len(ilp.model.sample_clonal_constraints) == 16
 
 
+def _fixed_tumor_variables(model, prefixes):
+    """Tumor-clone variables with one of the given prefixes that are pinned by their bounds."""
+    fixed = {}
+    for variable in model.component_data_objects(Var):
+        prefix, *indices = variable.name.split('_')
+        if prefix not in prefixes:
+            continue
+        clone = indices[1] if prefix in ('cA', 'cB') else indices[0]
+        if clone != '1' and variable.lb == variable.ub:
+            fixed[variable.name] = variable.lb
+    return fixed
+
+
 def test_carch_fixes_states_only_for_clones_present_in_fixed_u():
     ilp = _sample_clonal_ilp()
     ilp.fix_u([[0.5], [0.5], [0.0]])
     ilp.create_model()
 
-    assert len(ilp.model.sample_clonal_constraints) == 4
-    constrained_variables = {constraint.body.name for constraint in ilp.model.sample_clonal_constraints.values()}
-    assert constrained_variables == {'cA_1_2', 'cB_1_2', 'cA_2_2', 'cB_2_2'}
+    # States of present clones are variable bounds rather than equality rows
+    assert len(ilp.model.sample_clonal_constraints) == 0
+    assert len(ilp.model.fixed_value_conflicts) == 0
+    assert _fixed_tumor_variables(ilp.model, ('cA', 'cB')) == {'cA_1_2': 1, 'cB_1_2': 1, 'cA_2_2': 2, 'cB_2_2': 1}
+
+
+def test_carch_hot_start_respects_present_clone_states(caplog):
+    ilp = _sample_clonal_ilp()
+    ilp.fix_u([[0.5], [0.5], [0.0]])
+    ilp.create_model()
+
+    # a shared coordinate-descent start that ignores the sample-clonal states of the clones present in U
+    with caplog.at_level(logging.WARNING, logger='pyomo'):
+        ilp.hot_start([[1, 3, 3], [1, 0, 0]], [[1, 0, 0], [1, 0, 0]])
+
+    assert not [record for record in caplog.records if getattr(record, 'id', None) == 'W1002']
+    assert [[ilp.cA[_m][_n].value for _n in range(3)] for _m in range(2)] == [[1, 1, 3], [1, 2, 0]]
+    assert [[ilp.cB[_m][_n].value for _n in range(3)] for _m in range(2)] == [[1, 1, 0], [1, 1, 0]]
 
 
 def test_uarch_excludes_clones_with_incompatible_fixed_states():
@@ -1010,10 +1065,11 @@ def test_uarch_excludes_clones_with_incompatible_fixed_states():
     )
     ilp.create_model()
 
-    assert len(ilp.model.sample_clonal_constraints) == 1
-    constraint = next(iter(ilp.model.sample_clonal_constraints.values()))
-    assert constraint.body.name == 'u_3_1'
-    assert value(constraint.lower) == value(constraint.upper) == 0
+    # Incompatible clones are excluded through variable bounds rather than equality rows
+    assert len(ilp.model.sample_clonal_constraints) == 0
+    assert len(ilp.model.fixed_value_conflicts) == 0
+    assert _fixed_tumor_variables(ilp.model, ('u',)) == {'u_3_1': 0}
+    assert (ilp.model.u_1_1.lb, ilp.model.u_1_1.ub) == (0.5, 0.5)
 
 
 def _conflicting_sample_clonal_ilp(n):
@@ -1364,6 +1420,17 @@ def test_verify_sample_clonal_solution_checks_purity_and_present_clone_states():
         verify_sample_clonal_solution(sample_clonal, [0.5], c_a, c_b, [[0.4], [0.6], [0.0]])
 
 
+def test_verify_sample_clonal_solution_checks_additional_states():
+    sample_clonal = resolve_sample_clonal(parse_sample_clonal_inline('Tumor=1:1:1,2:2:1,3:2:0'), (1, 2, 3), ('Tumor',))
+    c_a = [[1, 1], [1, 2], [1, 2]]
+    u = [[0.5], [0.5]]
+
+    verify_sample_clonal_solution(sample_clonal, [0.5], c_a, [[1, 1], [1, 1], [1, 0]], u)
+
+    with pytest.raises(RuntimeError, match=re.escape("violates B['3', clone1]")):
+        verify_sample_clonal_solution(sample_clonal, [0.5], c_a, [[1, 1], [1, 1], [1, 1]], u)
+
+
 @pytest.fixture(scope='module')
 def cpp_sample_clonal_reader(tmp_path_factory):
     compiler = shutil.which('g++')
@@ -1388,10 +1455,11 @@ def cpp_sample_clonal_reader(tmp_path_factory):
     return executable
 
 
-def test_cpp_sample_clonal_parser_and_calibration_match_python(tmp_path, cpp_sample_clonal_reader):
+@pytest.mark.parametrize('additional_states', ('', 'Tumor\tc3\t1\t1\n'), ids=('two-states', 'three-states'))
+def test_cpp_sample_clonal_parser_and_calibration_match_python(tmp_path, cpp_sample_clonal_reader, additional_states):
     path = _write_sample_clonal(
         tmp_path,
-        f'{FORMAT_MARKER}\nsample\tcluster\tcn_a\tcn_b\nTumor\tc1\t1\t1\nTumor\tc2\t2\t1\n',
+        f'{FORMAT_MARKER}\nsample\tcluster\tcn_a\tcn_b\nTumor\tc1\t1\t1\nTumor\tc2\t2\t1\n{additional_states}',
     )
 
     subprocess.run([str(cpp_sample_clonal_reader), str(path)], check=True)
@@ -1407,7 +1475,7 @@ def test_cpp_sample_clonal_parser_and_calibration_match_python(tmp_path, cpp_sam
         ),
         (
             f'{FORMAT_MARKER}\nsample\tcluster\tcn_a\tcn_b\nTumor\tc1\t1\t1\n',
-            'exactly two sample-clonal entries',
+            'at least two sample-clonal entries',
         ),
     ],
 )
@@ -1464,3 +1532,4 @@ def test_compute_cn_documentation_covers_sample_clonal_contract():
     assert 'HATCHET_COMPUTE_CN_SAMPLECLONALFILE' in documentation
     assert 'Exactly one of `--diploid` or `--tetraploid` is required' in documentation
     assert 'cannot be combined with global `--clonal`' in documentation
+    assert 'not used to derive scaling or purity' in documentation

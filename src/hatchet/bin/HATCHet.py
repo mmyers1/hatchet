@@ -92,14 +92,20 @@ def parsing_arguments(args=None):
         type=str,
         required=False,
         default=config.compute_cn.sampleclonal,
-        help='Two sample-clonal cluster states per sample in inline form (default: none)',
+        help=(
+            'Two or more sample-clonal cluster states per sample in inline form; the first two calibrate scaling '
+            'and purity, additional states are only enforced (default: none)'
+        ),
     )
     parser.add_argument(
         '--sample-clonal-file',
         type=str,
         required=False,
         default=config.compute_cn.sampleclonalfile,
-        help='Path to a versioned TSV file containing two sample-clonal cluster states per sample (default: none)',
+        help=(
+            'Path to a versioned TSV file containing two or more sample-clonal cluster states per sample; the first '
+            'two calibrate scaling and purity, additional states are only enforced (default: none)'
+        ),
     )
     parser.add_argument(
         '-d',

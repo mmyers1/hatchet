@@ -151,11 +151,13 @@ This steps have two main parameters to control the model-selection criterion:
 
 ## [EXPERT OPTION] Sample-clonal override
 
-An expert may bypass both automatic clonal-cluster identification and the global `--clonal` override by supplying two **sample-clonal** reference states for every sample. A sample-clonal cluster has one copy-number state in every tumor clone that is present in that sample; the state and cluster may differ between samples.
+An expert may bypass both automatic clonal-cluster identification and the global `--clonal` override by supplying two or more **sample-clonal** states for every sample. A sample-clonal cluster has one copy-number state in every tumor clone that is present in that sample; the state and cluster may differ between samples.
+
+Only the **first two** states listed for each sample are reference states used for solving the sample's scaling factor and purity (below). Any additional states for that sample are fixed in every tumor clone present in that sample, exactly like the reference states, but are not used to derive scaling or purity and are not checked against the sample's RDR or BAF.
 
 This option is intended for experts who have visually identified reliable clonal clusters. Incorrect reference states impose hard constraints on the factorization and can produce infeasible or misleading results.
 
-For each sample `p`, the two references provide cluster RDRs `r1` and `r2` and distinct total copy numbers `w1` and `w2`. HATCHet derives the sample scaling factor and purity from the HATCHet Theorem 1 system:
+For each sample `p`, the two reference states provide cluster RDRs `r1` and `r2` and distinct total copy numbers `w1` and `w2`. HATCHet derives the sample scaling factor and purity from the HATCHet Theorem 1 system:
 
 ```text
 gamma[p] * r1 = 2 * (1 - purity[p]) + w1 * purity[p]
@@ -172,14 +174,18 @@ Use `--sample-clonal` with one semicolon-separated specification per sample:
 hatchet compute-cn \
 	-i /path/to/bulk \
 	--diploid \
-	--sample-clonal 'Tumor1=3:1:1,5:2:1;Tumor2=4:1:1,8:2:0'
+	--sample-clonal 'Tumor1=3:1:1,5:2:1,7:1:0;Tumor2=4:1:1,8:2:0'
 ```
+
+Here `Tumor1` uses clusters `3` and `5` as reference states and additionally fixes cluster `7` to `(1, 0)` in every tumor clone present in `Tumor1`.
 
 The grammar is:
 
 ```text
-SAMPLE=CLUSTER:CN_A:CN_B,CLUSTER:CN_A:CN_B[;SAMPLE=...]
+SAMPLE=CLUSTER:CN_A:CN_B,CLUSTER:CN_A:CN_B[,CLUSTER:CN_A:CN_B...][;SAMPLE=...]
 ```
+
+The first two `CLUSTER:CN_A:CN_B` states for a sample are its reference states.
 
 The identifiers must exactly match the `SAMPLE` and `#ID` columns of the SEG input. The characters `=`, `;`, `,`, and `:` are reserved delimiters in this form. Use the TSV form when an identifier contains one of these characters.
 
@@ -187,7 +193,7 @@ The equivalent INI setting is:
 
 ```ini
 [compute_cn]
-sampleclonal = Tumor1=3:1:1,5:2:1;Tumor2=4:1:1,8:2:0
+sampleclonal = Tumor1=3:1:1,5:2:1,7:1:0;Tumor2=4:1:1,8:2:0
 diploid = True
 ```
 
@@ -213,9 +219,10 @@ Tumor1	3	2	2
 Tumor1	5	2	1
 Tumor2	4	2	2
 Tumor2	8	2	0
+Tumor1	7	2	0
 ```
 
-Blank lines and comment lines are allowed after the format marker. Rows may appear in any order. Every SEG sample must appear exactly twice, the two cluster IDs for one sample must be distinct, and all allele copy numbers must be nonnegative integers.
+Blank lines and comment lines are allowed after the format marker. Every SEG sample must appear at least twice, the cluster IDs for one sample must be distinct, and all allele copy numbers must be nonnegative integers. Rows for different samples may be interleaved in any order, but within each sample the first two rows in file order are the reference states; later rows for that sample (such as `Tumor1 7` above) are additional states.
 
 The equivalent INI and environment settings are:
 
@@ -236,11 +243,12 @@ HATCHET_COMPUTE_CN_SAMPLECLONALFILE=/path/to/patient.sample-clonal.tsv
 - Sample-clonal input cannot be combined with global `--clonal` assignments.
 - `--purities` may be supplied as an independent check. Every value must agree with the purity derived from the sample-clonal references within absolute tolerance `0.05`; the derived values are used by the solver.
 - The normal proportion is fixed to `1 - purity[p]` in every sample.
-- For each supplied reference, every tumor clone with positive proportion in that sample is constrained to the supplied A/B state. Clones absent from the sample are not constrained by that sample.
+- For each supplied state, reference or additional, every tumor clone with positive proportion in that sample is constrained to the supplied A/B state. Clones absent from the sample are not constrained by that sample.
+- Only the two reference states of a sample must have distinct total copy numbers. Additional states have no such requirement and do not affect the derived scaling factor or purity.
 - The same cluster may have different states in different samples. In that case, a shared tumor clone cannot be present in both samples unless it satisfies both states.
 - Clone-count ranges remain supported because the input does not name tumor clone columns. The solver reports an error when too few tumor clones are available to satisfy incompatible sample states.
 - A `--fixed-matrix` file may be used simultaneously. Fixed-positive tumor clones must satisfy the corresponding sample-clonal states, fixed normal proportions must match derived purity, and remaining tumor purity must be assignable to a compatible clone.
-- Required states must satisfy the active `--diploidcmax` or `--tetraploidcmax`, amp/del constraints, the deprecated `--cnstates` limit, and the existing nonzero constraint for large clusters.
+- Required states, including additional states, must satisfy the active `--diploidcmax` or `--tetraploidcmax`, amp/del constraints, the deprecated `--cnstates` limit, and the existing nonzero constraint for large clusters.
 
 
 ## [EXPERT OPTION] Fixing entries of A, B, and U
@@ -347,10 +355,10 @@ HATCHet validates the auxiliary file before optimization and reports the source 
 
 When neither `--diploid` nor `--tetraploid` is specified, the same file is applied to both model-selection branches. A constraint that is incompatible with either branch causes an explicit error. Force a ploidy mode when the expert constraints are intended for only that branch.
 
-Tumor clone labels follow HATCHet's canonical weighted-copy-number order. For adjacent tumor clones, HATCHet enforces:
+Tumor clones are interchangeable in the model, so HATCHet does not constrain their order while solving. Without a fixed-matrix file, or when the file addresses only the normal clone, the reported tumor clones are sorted after solving by nondecreasing weighted copy number, where `s` is the cluster's position in the SEG file:
 
 ```text
-sum_s (s + 1) (A[s, i] + B[s, i]) <= sum_s (s + 1) (A[s, i + 1] + B[s, i + 1])
+sum_s (s + 1) (A[s, i] + B[s, i])
 ```
 
-Fully specified entries that violate this ordering are rejected when the conflict can be determined before solving. Partial entries may still produce a globally infeasible model; in that case the solver reports that no constrained solution is feasible.
+When the file addresses a tumor clone (an A or B entry in a `cloneN` column, or a U entry in a `cloneN` row), clone labels keep the meaning given by the file and are not reordered. Local validation cannot detect every conflict: partial entries may still produce a globally infeasible model, and in that case the solver reports that no constrained solution is feasible.

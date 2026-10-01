@@ -11,6 +11,15 @@ typedef std::vector<VarArray> VarMatrix;
 typedef std::vector<VarMatrix> Var3Matrix;
 typedef std::vector<Var3Matrix> Var4Matrix;
 
+/// A value that must be enforced by an explicit equality because it conflicts with another fixed value
+struct FixedValue
+{
+    FIXED_MATRIX_t matrix;
+    int row;
+    int column;
+    double value;
+};
+
 class IlpSubset
 {
 
@@ -56,7 +65,8 @@ public:
 
     void init();
 
-    void hotStart(const IntMatrix& hCA, const IntMatrix& hCB);
+    /// Set a MIP start from integer copy numbers and, in FULL mode, optional clone proportions
+    void hotStart(const IntMatrix& hCA, const IntMatrix& hCB, const DoubleMatrix& hU = DoubleMatrix());
 
     int solve(const int timeLimit, const int memoryLimit, const int nrThreads);
     int solve(const int timeLimit, const int memoryLimit, const int nrThreads, const int maxIter);
@@ -115,13 +125,11 @@ private:
     void buildConstraints();
     /// Build the constraints that depend on the chosen second objective
     void buildOptionalConstraints();
-    /// Build the constraints used to break the symmetry by avoid permutations of non-null columns
-    void buildSymmetryBreaking();
-    ///
-    void fixGivenCN();
-    /// Add sparse hard constraints supplied by the user
-    void fixMatrixEntries();
-    /// Enforce per-sample clonal states and derived purities
+    /// Derive variable bounds from the normal clone, clonal copy numbers, fixed entries, and sample-clonal states
+    void computeFixedBounds();
+    /// Add explicit equalities for fixed values that conflict with another fixed value
+    void addFixedValueConflicts();
+    /// Enforce per-sample clonal states on present clones in FULL mode
     void fixSampleClonal();
     /// Build objective
     void buildObjective();
@@ -136,9 +144,9 @@ private:
     /// Extract from current solution the values of the variables corresponding to the proportions
     DoubleMatrix getU();
     ///
-    bool checkRank(const IntMatrix &hCA, const IntMatrix &hCB, const IntArray &map);
-    ///
     double symmCoeff(const int index);
+    /// Upper bound on the total copy number of segment s
+    int upperCN(const int s) const;
 
     /// Number of clones
     const int _n;
@@ -184,6 +192,17 @@ private:
     MODE_t _mode;
     /// Maximum B-allele copy number
     const int _M;
+
+    /// Bounds on cA[s][i] and cB[s][i] implied by fixed values
+    IntMatrix _lbA;
+    IntMatrix _ubA;
+    IntMatrix _lbB;
+    IntMatrix _ubB;
+    /// Bounds on u[i][p] implied by fixed values
+    DoubleMatrix _lbU;
+    DoubleMatrix _ubU;
+    /// Fixed values that could not be expressed as bounds
+    std::vector<FixedValue> _conflicts;
 
     /// Gurobi environment
     GRBEnv _env;

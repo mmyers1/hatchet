@@ -28,6 +28,26 @@ class Random:
             np.random.set_state(random_states.pop())
 
 
+def canonicalize_clone_order(cA, cB, u):
+    """
+    Reorder tumor clones by nondecreasing burden sum_s (s + 1) * (cA[s][i] + cB[s][i]).
+
+    Columns 1.. of cA/cB and rows 1.. of u are permuted together (stable for ties); the normal clone stays first.
+    Returns new list-of-lists copies of cA, cB and u.
+    """
+    n = len(cA[0]) if len(cA) else 0
+    burden = [0] * n
+    for _m in range(len(cA)):
+        for _n in range(1, n):
+            burden[_n] += (_m + 1) * (cA[_m][_n] + cB[_m][_n])
+    order = [0] + sorted(range(1, n), key=lambda clone_index: burden[clone_index])
+
+    cA = [[row[clone_index] for clone_index in order] for row in cA]
+    cB = [[row[clone_index] for clone_index in order] for row in cB]
+    u = [list(u[clone_index]) for clone_index in order]
+    return cA, cB, u
+
+
 def parse_clonal(clonal):
     copy_numbers = OrderedDict()  # dict from cluster_id => (cn_a, cn_b) 2-tuple
     clonal_parts = clonal.split(',')

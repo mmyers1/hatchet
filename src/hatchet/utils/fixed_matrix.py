@@ -58,6 +58,11 @@ class ResolvedFixedMatrix:
     def entries_for(self, matrix):
         return tuple(entry for entry in self.entries if entry.matrix == matrix)
 
+    @property
+    def addresses_tumor_clones(self):
+        """True when any entry refers to a tumor clone, which pins that clone's column identity."""
+        return any((entry.row_index if entry.matrix == 'U' else entry.column_index) > 0 for entry in self.entries)
+
 
 def _format_error(source, line_number, message):
     return FixedMatrixFormatError(f'{source}:{line_number}: {message}')
@@ -571,27 +576,6 @@ def validate_fixed_matrix(
                     f'cluster {str(cluster_id)!r} fixes {len(distinct_states)} distinct tumor states, '
                     f'exceeding cnstates {cnstates}',
                 )
-
-    for clone_index in range(1, fixed_matrix.clones - 1):
-        left_entries = []
-        right_entries = []
-        for cluster_index in range(len(fixed_matrix.cluster_ids)):
-            for matrix in ('A', 'B'):
-                left_entries.append(values.get((matrix, cluster_index, clone_index)))
-                right_entries.append(values.get((matrix, cluster_index, clone_index + 1)))
-        if any(entry is None for entry in left_entries + right_entries):
-            continue
-
-        left_burden = sum(entry.value * (index // 2 + 1) for index, entry in enumerate(left_entries))
-        right_burden = sum(entry.value * (index // 2 + 1) for index, entry in enumerate(right_entries))
-        if left_burden > right_burden:
-            error_entry = max(right_entries, key=lambda entry: entry.source_entry.line_number)
-            raise _entry_error(
-                fixed_matrix,
-                error_entry,
-                f'fully fixed clone{clone_index} burden {left_burden} exceeds '
-                f'clone{clone_index + 1} burden {right_burden}',
-            )
 
     return fixed_matrix
 

@@ -14,7 +14,7 @@ from hatchet.utils.sample_clonal import (
     validate_sample_clonal_constraints,
     verify_sample_clonal_solution,
 )
-from hatchet.utils.solve.utils import parse_clonal, scale_rdr
+from hatchet.utils.solve.utils import canonicalize_clone_order, parse_clonal, scale_rdr
 from hatchet import config
 import hatchet.utils.Supporting as sp
 
@@ -28,13 +28,18 @@ def solver_available(solver=None):
     return pe.SolverFactory(solver).available(exception_flag=False)
 
 
-def _verified_solution(result, fixed_matrix, sample_clonal=None, purities=None):
+def _finalize_solution(result, fixed_matrix, sample_clonal=None, purities=None):
+    """Verify user constraints and report interchangeable tumor clones in canonical order."""
     if result is not None:
-        _, cA, cB, u, _, _ = result
+        obj, cA, cB, u, cluster_ids, sample_ids = result
         if fixed_matrix is not None:
             verify_fixed_matrix_solution(fixed_matrix, cA, cB, u)
         if sample_clonal is not None:
             verify_sample_clonal_solution(sample_clonal, purities, cA, cB, u)
+        # The model has no clone-order constraint; clones addressed by the fixed matrix keep their labels
+        if fixed_matrix is None or not fixed_matrix.addresses_tumor_clones:
+            cA, cB, u = canonicalize_clone_order(cA, cB, u)
+        result = obj, cA, cB, u, cluster_ids, sample_ids
     return result
 
 
@@ -209,7 +214,7 @@ def solve(
                 max_homdel_size=max_homdel_size,
             )
             ilp.create_model(pprint=True)
-            return _verified_solution(
+            return _finalize_solution(
                 ilp.run(solver_type=solver, timelimit=timelimit),
                 resolved_fixed_matrix,
                 resolved_sample_clonal,
@@ -232,7 +237,7 @@ def solve(
                 sample_clonal=resolved_sample_clonal,
                 max_homdel_size=max_homdel_size,
             )
-            return _verified_solution(
+            return _finalize_solution(
                 cd.run(
                     solver_type=solver,
                     max_iters=max_iters,
@@ -270,8 +275,8 @@ def solve(
                 random_seed=random_seed,
                 timelimit=timelimit,
             )
-            _verified_solution(cd_result, resolved_fixed_matrix, resolved_sample_clonal, purities)
-            _, cA, cB, _, _, _ = cd_result
+            _finalize_solution(cd_result, resolved_fixed_matrix, resolved_sample_clonal, purities)
+            _, cA, cB, u, _, _ = cd_result
 
             ilp = ILPSubset(
                 n,
@@ -290,8 +295,8 @@ def solve(
                 max_homdel_size=max_homdel_size,
             )
             ilp.create_model()
-            ilp.hot_start(cA, cB)
-            return _verified_solution(
+            ilp.hot_start(cA, cB, u)
+            return _finalize_solution(
                 ilp.run(solver_type=solver, timelimit=timelimit),
                 resolved_fixed_matrix,
                 resolved_sample_clonal,
@@ -362,7 +367,7 @@ def solve(
                 max_homdel_size=max_homdel_size,
             )
             ilp.create_model(pprint=True)
-            return _verified_solution(
+            return _finalize_solution(
                 ilp.run(solver_type=solver, timelimit=timelimit),
                 resolved_fixed_matrix,
                 resolved_sample_clonal,
@@ -388,7 +393,7 @@ def solve(
                 w=weights,
                 max_homdel_size=max_homdel_size,
             )
-            return _verified_solution(
+            return _finalize_solution(
                 cd.run(
                     solver_type=solver,
                     max_iters=max_iters,
@@ -429,8 +434,8 @@ def solve(
                 random_seed=random_seed,
                 timelimit=timelimit,
             )
-            _verified_solution(cd_result, resolved_fixed_matrix, resolved_sample_clonal, purities)
-            _, cA, cB, _, _, _ = cd_result
+            _finalize_solution(cd_result, resolved_fixed_matrix, resolved_sample_clonal, purities)
+            _, cA, cB, u, _, _ = cd_result
 
             ilp = ILPSubsetSplit(
                 n,
@@ -452,8 +457,8 @@ def solve(
                 max_homdel_size=max_homdel_size,
             )
             ilp.create_model()
-            ilp.hot_start(cA, cB)
-            return _verified_solution(
+            ilp.hot_start(cA, cB, u)
+            return _finalize_solution(
                 ilp.run(solver_type=solver, timelimit=timelimit),
                 resolved_fixed_matrix,
                 resolved_sample_clonal,

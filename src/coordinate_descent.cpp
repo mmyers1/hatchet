@@ -333,7 +333,7 @@ void CoordinateDescent::runWorker()
             std::lock_guard<std::mutex> lock(_mutexTasks);
             seed = _seedidx < _seeds.size() ? _seedidx++ : -1;
         }
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         if(seed > -1) {
             Worker worker(_FA, _FB, _bins, _m, _k, _n, _cmax, _d, _mu, _maxHomdelSize, _base, _ampdel, _cn, _fixedMatrix,
                           _sampleClonal, _purities,

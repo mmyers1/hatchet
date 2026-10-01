@@ -13,6 +13,7 @@ int main(int argc, char** argv)
         std::map<std::string, int> clusters;
         clusters["c1"] = 0;
         clusters["c2"] = 1;
+        clusters["c3"] = 2;
         std::map<std::string, int> samples;
         samples["Tumor"] = 0;
         const SampleClonal sampleClonal = SampleClonal::read(argv[1], clusters, samples);
@@ -30,11 +31,11 @@ int main(int argc, char** argv)
             sampleClonal.validate(6, 1, false, -1, weights, purities, std::stod(argv[3]));
             return 0;
         }
-        DoubleMatrix R(2, DoubleArray(1, 0.0));
+        DoubleMatrix R(3, DoubleArray(1, 5.0));
         R[0][0] = 2.0 / 3.0;
         R[1][0] = 2.5 / 3.0;
         const SampleClonalCalibration calibration = sampleClonal.calibrate(R, 1);
-        if(sampleClonal.entries().size() != 2 || sampleClonal.maxTotalCopyNumber() != 3 ||
+        if(sampleClonal.entries().size() < 2 || sampleClonal.maxTotalCopyNumber() != 3 ||
            std::fabs(calibration.gamma[0] - 3.0) > TOL ||
            std::fabs(calibration.purity[0] - 0.5) > TOL)
         {

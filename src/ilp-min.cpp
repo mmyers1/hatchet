@@ -1,5 +1,21 @@
 #include "ilp-min.h"
 
+namespace
+{
+    /// Narrow [lower, upper] to a single value; returns false when the value lies outside the current bounds
+    template<typename T>
+    bool fixBounds(T& lower, T& upper, const T value)
+    {
+        if(value < lower || value > upper)
+        {
+            return false;
+        }
+        lower = value;
+        upper = value;
+        return true;
+    }
+}
+
 IlpSubset::IlpSubset(const int n,
                      const int m,
                      const int k,
@@ -112,6 +128,7 @@ void IlpSubset::fixC(const IntMatrix& barCA, const IntMatrix& barCB)
 
 void IlpSubset::init()
 {
+    computeFixedBounds();
     buildVariables();
     if(_d > 0 && (_mode == MODE_t::FULL || _mode == MODE_t::CARCH))
     {
@@ -123,13 +140,8 @@ void IlpSubset::init()
     {
         buildOptionalConstraints();
     }
-    if(_mode == MODE_t::FULL || _mode == MODE_t::CARCH)
-    {
-        buildSymmetryBreaking();
-        fixGivenCN();
-    }
     fixSampleClonal();
-    fixMatrixEntries();
+    addFixedValueConflicts();
 
     buildObjective();
     //test();
@@ -137,56 +149,80 @@ void IlpSubset::init()
 }
 
 
-void IlpSubset::hotStart(const IntMatrix& hCA, const IntMatrix& hCB)
+void IlpSubset::hotStart(const IntMatrix& hCA, const IntMatrix& hCB, const DoubleMatrix& hU)
 {
     if(_mode == MODE_t::UARCH)
     {
         throw "A Hot Start cannot be provided in UARCH mode when mixing proportions U are fixed!";
-    } else {
-        IntArray rank(_n, 0);
-        if(hCA.size() != _m || hCB.size() != _m)
+    }
+    if(hCA.size() != _m || hCB.size() != _m)
+    {
+        throw "The rows of both hot starts must be equal to the current number m of segments!";
+    }
+    for(int s = 0; s < _m; ++s)
+    {
+        if(hCA[s].size() != _n || hCB[s].size() != _n)
         {
-            throw "The rows of both hot starts must be equal to the current number m of segments!";
+            throw "The columns of both hot starts must be equal to the current number n of clones!";
         }
-        for(int s = 0; s < _m; ++s)
+        if(hCA[s][0] != 1 || hCB[s][0] != 1)
         {
-            if(hCA[s].size() != _n || hCB[s].size() != _n)
+            std::cout << toString(hCB) << std::endl;
+            throw "The first clone must have only allele-specific copy numbers equal to 1";
+        }
+    }
+
+    // Clone columns are used as given: the model has no clone-order constraint, and in CARCH mode
+    // (and in FULL mode when hU is supplied) the column identities are tied to the proportions.
+    for(int s = 0; s < _m; ++s)
+    {
+        for(int i = 0; i < _n; ++i)
+        {
+            _cA[s][i].set(GRB_DoubleAttr_Start, hCA[s][i]);
+            _cB[s][i].set(GRB_DoubleAttr_Start, hCB[s][i]);
+            if(!_bitcA.empty())
             {
-                throw "The columns of both hot starts must be equal to the current number n of clones!";
-            }
-            for(int i = 0; i < _n; ++i)
-            {
-                if(i > 0)
+                for(int b = 0; b < _M; ++b)
                 {
-                    rank[i] += hCA[s][i] * symmCoeff(s) + hCB[s][i] * symmCoeff(s);
-                } else {
-                    rank[0] = -1;
-                    if(hCA[s][0] != 1 || hCB[s][0] != 1)
-                    {
-                        std::cout << toString(hCB) << std::endl;
-                        throw "The first clone must have only allele-specific copy numbers equal to 1";
-                    }
+                    _bitcA[b][s][i].set(GRB_DoubleAttr_Start, (hCA[s][i] >> b) & 1);
+                    _bitcB[b][s][i].set(GRB_DoubleAttr_Start, (hCB[s][i] >> b) & 1);
                 }
             }
         }
 
-        IntArray map(_n);
-        if(_fixedMatrix.empty())
+        if(_ampdel && _cn.count(s) == 0)
         {
-            map = sort_indexes(rank);
-            assert(checkRank(hCA, hCB, map));
-        }
-        else
-        {
-            std::iota(map.begin(), map.end(), 0);
-        }
-
-        for(int s = 0; s < _m; ++s)
-        {
-            for(int i = 0; i < _n; ++i)
+            bool ampA = false;
+            bool ampB = false;
+            for(int i = 1; i < _n; ++i)
             {
-                _cA[s][map[i]].set(GRB_DoubleAttr_Start, hCA[s][i]);
-                _cB[s][map[i]].set(GRB_DoubleAttr_Start, hCB[s][i]);
+                ampA = ampA || hCA[s][i] > _base;
+                ampB = ampB || hCB[s][i] > _base;
+            }
+            _adA[s].set(GRB_DoubleAttr_Start, ampA ? 1.0 : 0.0);
+            _adB[s].set(GRB_DoubleAttr_Start, ampB ? 1.0 : 0.0);
+        }
+    }
+
+    if(_mode == MODE_t::FULL && !hU.empty())
+    {
+        if(hU.size() != _n)
+        {
+            throw "The rows of the proportion hot start must be equal to the current number n of clones!";
+        }
+        for(int i = 0; i < _n; ++i)
+        {
+            if(hU[i].size() != _k)
+            {
+                throw "The columns of the proportion hot start must be equal to the current number k of samples!";
+            }
+            for(int p = 0; p < _k; ++p)
+            {
+                _u[i][p].set(GRB_DoubleAttr_Start, hU[i][p]);
+                if(i > 0 && !_x.empty())
+                {
+                    _x[i][p].set(GRB_DoubleAttr_Start, hU[i][p] > TOL ? 1.0 : 0.0);
+                }
             }
         }
     }
@@ -531,23 +567,15 @@ void IlpSubset::buildVariables()
         _cB = VarMatrix(_m);
         for(int s = 0; s < _m; ++s)
         {
-            int upper = 0;
-            if(_cn.count(s) > 0)
-            {
-                upper = std::max(_cn.at(s).first + _cn.at(s).second, _cmax);
-            } else {
-                upper = _cmax;
-            }
-
             _cA[s] = VarArray(_n);
             _cB[s] = VarArray(_n);
             for(int i = 0; i < _n; ++i)
             {
                 snprintf(buf, 1024, "cA_%d_%d", s+1, i+1);
-                _cA[s][i] = _model.addVar(0, upper, 0, GRB_INTEGER, buf);
+                _cA[s][i] = _model.addVar(_lbA[s][i], _ubA[s][i], 0, GRB_INTEGER, buf);
 
                 snprintf(buf, 1024, "cB_%d_%d", s+1, i+1);
-                _cB[s][i] = _model.addVar(0, upper, 0, GRB_INTEGER, buf);
+                _cB[s][i] = _model.addVar(_lbB[s][i], _ubB[s][i], 0, GRB_INTEGER, buf);
             }
         }
 
@@ -602,7 +630,7 @@ void IlpSubset::buildVariables()
             for(int p = 0; p < _k; ++p)
             {
                 snprintf(buf, 1024, "u_%d_%d", i+1, p+1);
-                _u[i][p] = _model.addVar(0, 1, 0, GRB_CONTINUOUS, buf);
+                _u[i][p] = _model.addVar(_lbU[i][p], _ubU[i][p], 0, GRB_CONTINUOUS, buf);
             }
         }
     }
@@ -759,14 +787,6 @@ void IlpSubset::buildConstraints()
     {
         for(int s = 0; s < _m; ++s)
         {
-            int upper = 0;
-            if(_cn.count(s) > 0)
-            {
-                upper = std::max(_cn.at(s).first + _cn.at(s).second, _cmax);
-            } else {
-                upper = _cmax;
-            }
-
             for(int i = 0; i < _n; ++i)
             {
                 GRBLinExpr sumA;
@@ -782,7 +802,6 @@ void IlpSubset::buildConstraints()
                 }
                 _model.addConstr(_cA[s][i] == sumA);
                 _model.addConstr(_cB[s][i] == sumB);
-                _model.addConstr(_cA[s][i] + _cB[s][i] <= upper);
                 sumA.clear();
                 sumB.clear();
             }
@@ -826,34 +845,24 @@ void IlpSubset::buildConstraints()
                 sumB.clear();
             }
         }
-
-        for(int s = 0; s < _m; ++s)
-        {
-            int upper = 0;
-            if(_cn.count(s) > 0)
-            {
-                upper = std::max(_cn.at(s).first + _cn.at(s).second, _cmax);
-            } else {
-                upper = _cmax;
-            }
-
-            for(int i = 0; i < _n; ++i)
-            {
-                _model.addConstr(_cA[s][i] + _cB[s][i] <= upper);
-            }
-        }
     }
 
     if(_mode == MODE_t::FULL || _mode == MODE_t::CARCH)
     {
+        // The normal clone and other fixed cells are enforced through variable bounds, so rows that
+        // those bounds already imply are omitted.
         const double totalWeight = std::accumulate(_w.begin(), _w.end(), 0.0);
         for(int s = 0; s < _m; ++s)
         {
-            _model.addConstr(_cA[s][0] == 1);
-            _model.addConstr(_cB[s][0] == 1);
-            if(totalWeight > 0.0 && _w[s] > 0.0 && _w[s] / totalWeight >= _maxHomdelSize)
+            const int upper = upperCN(s);
+            const bool noHomdel = totalWeight > 0.0 && _w[s] > 0.0 && _w[s] / totalWeight >= _maxHomdelSize;
+            for(int i = 0; i < _n; ++i)
             {
-                for(int i = 1; i < _n; ++i)
+                if(_ubA[s][i] + _ubB[s][i] > upper)
+                {
+                    _model.addConstr(_cA[s][i] + _cB[s][i] <= upper);
+                }
+                if(i > 0 && noHomdel && _lbA[s][i] + _lbB[s][i] < 1)
                 {
                     _model.addConstr(_cA[s][i] + _cB[s][i] >= 1);
                 }
@@ -1005,96 +1014,89 @@ void IlpSubset::buildOptionalConstraints()
 }
 
 
-void IlpSubset::buildSymmetryBreaking()
+void IlpSubset::computeFixedBounds()
 {
-    for(int i = 1; i < _n - 1; ++i)
+    _conflicts.clear();
+    const bool copyNumbers = _mode == MODE_t::FULL || _mode == MODE_t::CARCH;
+    const bool proportions = _mode == MODE_t::FULL || _mode == MODE_t::UARCH;
+
+    const auto fixCN = [this](const FIXED_MATRIX_t matrix, const int s, const int i, const int value)
     {
-        GRBLinExpr sumI;
-        GRBLinExpr sumI1;
-        sumI = 0;
-        sumI1 = 0;
+        IntMatrix& lower = matrix == MATRIX_A ? _lbA : _lbB;
+        IntMatrix& upper = matrix == MATRIX_A ? _ubA : _ubB;
+        if(!fixBounds(lower[s][i], upper[s][i], value))
+        {
+            _conflicts.push_back(FixedValue{matrix, s, i, static_cast<double>(value)});
+        }
+    };
+    const auto fixProportion = [this](const int i, const int p, const double value)
+    {
+        if(!fixBounds(_lbU[i][p], _ubU[i][p], value))
+        {
+            _conflicts.push_back(FixedValue{MATRIX_U, i, p, value});
+        }
+    };
+
+    if(copyNumbers)
+    {
+        _lbA = IntMatrix(_m, IntArray(_n, 0));
+        _lbB = _lbA;
+        _ubA = IntMatrix(_m);
         for(int s = 0; s < _m; ++s)
         {
-            sumI += _cA[s][i] * symmCoeff(s) + _cB[s][i] * symmCoeff(s);
-            sumI1 += _cA[s][i+1] * symmCoeff(s) + _cB[s][i+1] * symmCoeff(s);
+            _ubA[s] = IntArray(_n, upperCN(s));
         }
-        _model.addConstr(sumI <= sumI1);
-        sumI.clear();
-        sumI1.clear();
+        _ubB = _ubA;
+
+        for(int s = 0; s < _m; ++s)
+        {
+            fixCN(MATRIX_A, s, 0, 1);
+            fixCN(MATRIX_B, s, 0, 1);
+        }
+        for(auto const& cluster : _cn)
+        {
+            for(int i = 1; i < _n; ++i)
+            {
+                fixCN(MATRIX_A, cluster.first, i, cluster.second.first);
+                fixCN(MATRIX_B, cluster.first, i, cluster.second.second);
+            }
+        }
     }
 
-    _model.update();
-}
-
-void IlpSubset::fixGivenCN()
-{
-    for(auto const& cluster : _cn)
+    if(proportions)
     {
-        int s = cluster.first;
-        CNState cnstate = cluster.second;
-        for(int i = 1; i < _n; ++i)
-        {
-            _model.addConstr(_cA[s][i] == cnstate.first);
-            _model.addConstr(_cB[s][i] == cnstate.second);
-        }
+        _lbU = DoubleMatrix(_n, DoubleArray(_k, 0.0));
+        _ubU = DoubleMatrix(_n, DoubleArray(_k, 1.0));
     }
-}
 
-void IlpSubset::fixMatrixEntries()
-{
-    const std::vector<FixedMatrixEntry>& entries = _fixedMatrix.entries();
-    for(std::vector<FixedMatrixEntry>::const_iterator it = entries.begin(); it != entries.end(); ++it)
+    const std::vector<FixedMatrixEntry>& fixedEntries = _fixedMatrix.entries();
+    for(std::vector<FixedMatrixEntry>::const_iterator it = fixedEntries.begin(); it != fixedEntries.end(); ++it)
     {
-        if(it->matrix == MATRIX_A && (_mode == MODE_t::FULL || _mode == MODE_t::CARCH))
+        if((it->matrix == MATRIX_A || it->matrix == MATRIX_B) && copyNumbers)
         {
-            _model.addConstr(_cA[it->row][it->column] == it->value);
+            fixCN(it->matrix, it->row, it->column, static_cast<int>(std::lround(it->value)));
         }
-        else if(it->matrix == MATRIX_B && (_mode == MODE_t::FULL || _mode == MODE_t::CARCH))
+        else if(it->matrix == MATRIX_U && proportions)
         {
-            _model.addConstr(_cB[it->row][it->column] == it->value);
-        }
-        else if(it->matrix == MATRIX_U && (_mode == MODE_t::FULL || _mode == MODE_t::UARCH))
-        {
-            _model.addConstr(_u[it->row][it->column] == it->value);
+            fixProportion(it->row, it->column, it->value);
         }
     }
-}
 
-
-void IlpSubset::fixSampleClonal()
-{
     if(_sampleClonal.empty())
     {
         return;
     }
 
-    if(_mode == MODE_t::FULL || _mode == MODE_t::UARCH)
+    if(proportions)
     {
         for(int sample = 0; sample < _k; ++sample)
         {
-            _model.addConstr(_u[0][sample] == 1.0 - _purities[sample]);
+            fixProportion(0, sample, 1.0 - _purities[sample]);
         }
     }
 
     const std::vector<SampleClonalEntry>& entries = _sampleClonal.entries();
-    if(_mode == MODE_t::FULL)
-    {
-        for(std::vector<SampleClonalEntry>::const_iterator entry = entries.begin(); entry != entries.end(); ++entry)
-        {
-            for(int clone = 1; clone < _n; ++clone)
-            {
-                _model.addConstr(_cA[entry->cluster][clone] - entry->cnA <=
-                                 _cmax * (1.0 - _x[clone][entry->sample]));
-                _model.addConstr(entry->cnA - _cA[entry->cluster][clone] <=
-                                 _cmax * (1.0 - _x[clone][entry->sample]));
-                _model.addConstr(_cB[entry->cluster][clone] - entry->cnB <=
-                                 _cmax * (1.0 - _x[clone][entry->sample]));
-                _model.addConstr(entry->cnB - _cB[entry->cluster][clone] <=
-                                 _cmax * (1.0 - _x[clone][entry->sample]));
-            }
-        }
-    }
-    else if(_mode == MODE_t::CARCH)
+    if(_mode == MODE_t::CARCH)
     {
         for(std::vector<SampleClonalEntry>::const_iterator entry = entries.begin(); entry != entries.end(); ++entry)
         {
@@ -1102,8 +1104,8 @@ void IlpSubset::fixSampleClonal()
             {
                 if(_barU[clone][entry->sample] > TOL)
                 {
-                    _model.addConstr(_cA[entry->cluster][clone] == entry->cnA);
-                    _model.addConstr(_cB[entry->cluster][clone] == entry->cnB);
+                    fixCN(MATRIX_A, entry->cluster, clone, entry->cnA);
+                    fixCN(MATRIX_B, entry->cluster, clone, entry->cnB);
                 }
             }
         }
@@ -1125,9 +1127,56 @@ void IlpSubset::fixSampleClonal()
                 }
                 if(!compatible)
                 {
-                    _model.addConstr(_u[clone][sample] == 0.0);
+                    fixProportion(clone, sample, 0.0);
                 }
             }
+        }
+    }
+}
+
+
+void IlpSubset::addFixedValueConflicts()
+{
+    // Equalities for values that disagree with an earlier bound make the model infeasible, as before
+    for(std::vector<FixedValue>::const_iterator it = _conflicts.begin(); it != _conflicts.end(); ++it)
+    {
+        if(it->matrix == MATRIX_A)
+        {
+            _model.addConstr(_cA[it->row][it->column] == it->value);
+        }
+        else if(it->matrix == MATRIX_B)
+        {
+            _model.addConstr(_cB[it->row][it->column] == it->value);
+        }
+        else
+        {
+            _model.addConstr(_u[it->row][it->column] == it->value);
+        }
+    }
+}
+
+
+void IlpSubset::fixSampleClonal()
+{
+    // CARCH states, UARCH exclusions, and derived purities are variable bounds (see computeFixedBounds)
+    if(_sampleClonal.empty() || _mode != MODE_t::FULL)
+    {
+        return;
+    }
+
+    const std::vector<SampleClonalEntry>& entries = _sampleClonal.entries();
+    for(std::vector<SampleClonalEntry>::const_iterator entry = entries.begin(); entry != entries.end(); ++entry)
+    {
+        for(int clone = 1; clone < _n; ++clone)
+        {
+            _model.addConstr(_cA[entry->cluster][clone] - entry->cnA <=
+                             _cmax * (1.0 - _x[clone][entry->sample]));
+            _model.addConstr(entry->cnA - _cA[entry->cluster][clone] <=
+                             _cmax * (1.0 - _x[clone][entry->sample]));
+            _model.addConstr(_cB[entry->cluster][clone] - entry->cnB <=
+                             _cmax * (1.0 - _x[clone][entry->sample]));
+            _model.addConstr(entry->cnB - _cB[entry->cluster][clone] <=
+                             _cmax * (1.0 - _x[clone][entry->sample]));
         }
     }
 }
@@ -1279,21 +1328,13 @@ DoubleMatrix IlpSubset::getU()
 }
 
 
-bool IlpSubset::checkRank(const IntMatrix &hCA, const IntMatrix &hCB, const IntArray &map)
+int IlpSubset::upperCN(const int s) const
 {
-    bool flag = true;
-    for(int i = 1; i < _n - 1; ++i)
+    if(_cn.count(s) > 0)
     {
-        int sumI = 0;
-        int sumI1 = 0;
-        for(int s = 0; s < _m; ++s)
-        {
-            sumI += hCA[s][map[i]] * symmCoeff(s) + hCB[s][map[i]] * symmCoeff(s);
-            sumI1 += hCA[s][map[i+1]] * symmCoeff(s) + hCB[s][map[i+1]] * symmCoeff(s);
-        }
-        flag = flag && (sumI <= sumI1);
+        return std::max(_cn.at(s).first + _cn.at(s).second, _cmax);
     }
-    return flag;
+    return _cmax;
 }
 
 

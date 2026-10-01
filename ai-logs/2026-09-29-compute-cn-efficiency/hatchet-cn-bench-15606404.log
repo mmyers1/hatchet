@@ -1,0 +1,46 @@
+host: isca038.mskcc.org, BBC: /data1/shahs3/users/myersm2/repos/osteo/results/hatchet2/IID_H134708/bbc/bulk.bbc, WORK: /data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708, SOLVER: cpp, CLONES: 3,5, SEEDS: 100, JOBS: 8, MODES: 2, TIMELIMIT: none, EXTRA_ARGS: -eD 9 -eT 15
+old: code /data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/code_old/src, solver /data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/build_old/solve; arguments OK
+new: code /data1/shahs3/users/myersm2/repos/hatchet/src, solver /data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/build_new/solve; arguments OK
+== mode 2, old: /home/myersm2/miniforge3/envs/hatchet-test/bin/python -m hatchet compute-cn /data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/build_old/solve -i /data1/shahs3/users/myersm2/repos/osteo/results/hatchet2/IID_H134708/bbc/bulk -x /data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/mode2/old -n 3,5 -p 100 -j 8 -r 6700 --mode 2 -v 2 -eD 9 -eT 15
+{"returncode": 1, "wall_s": 22672.05, "cpu_s": 174090.31, "peak_tree_rss_mb": 32685.7, "max_single_rss_mb": 32314.4, "peak_python_rss_mb": 444.1}
+mode 2, old failed (exit 1); last lines of /data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/mode2/old/log.err:
+Unexpected error during solve. Please run `hatchet check-solver` to ensure that the solver is working correctly.[0mTraceback (most recent call last):
+  File "/home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/runpy.py", line 197, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/code_old/src/hatchet/__main__.py", line 66, in <module>
+    sys.exit(main())
+  File "/data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/code_old/src/hatchet/__main__.py", line 62, in main
+    globals()[command](args)
+  File "/data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/code_old/src/hatchet/bin/HATCHet.py", line 583, in main
+    diploidObjs = runningDiploid(neutral=neutral, args=args)
+  File "/data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/code_old/src/hatchet/bin/HATCHet.py", line 1060, in runningDiploid
+    results.append((n, execute(args, basecmd, n, outprefix), outprefix))
+  File "/data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/code_old/src/hatchet/bin/HATCHet.py", line 1476, in execute
+    raise RuntimeError(error('The following command failed: \n\t\t{}\nwith {}\n{}'.format(cmd, buffer, msg)))
+RuntimeError: [91mThe following command failed:
+		/data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/build_old/solve /data1/shahs3/users/myersm2/repos/osteo/results/hatchet2/IID_H134708/bbc/bulk -f  -e 9 -j 8 -p 100 -u 0.1 --max-homdel-size 0.005 -r 6700 -M 2 -v 2 -c 5:1:1 -n 4 -o /data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/mode2/old/results.diploid.n4
+with ['\x1b[95m\x1b[1m[13:14:59]### Parsing and checking input arguments\t\x1b[0m', '\x1b[92m[13:14:59]## \tInput prefix:  /data1/shahs3/users/myersm2/repos/osteo/results/hatchet2/IID_H134708/bbc/bulk', 'Input SEG:  /data1/shahs3/users/myersm2/repos/osteo/results/hatchet2/IID_H134708/bbc/bulk.seg', 'Input BBC:  /data1/shahs3/users/myersm2/repos/osteo/results/hatchet2/IID_H134708/bbc/bulk.bbc', 'Number of clones:  4', 'Clonal copy numbers:  { 5 [Cluster] : 1|1 [CN] }', 'Help message:  0', 'Maximum number of copy-number states:  -1', 'Maximum integer copy number:  9', 'Number of jobs:  8', 'Number of seeds:  100', 'Minimum tumor-clone threshold:  0.1', 'Maximum homozygous-deletion cluster-size fraction:  0.005', 'Maximum resident memory:  -1', 'Time limit:  -1', 'Maximum number of iteratios:  10', 'Random seed:  6700', 'Solving mode:  Coordinate-descent only', 'Verbose:  2', 'Output prefix:  /data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/mode2/old/results.diploid.n4', 'Diploid threshold:  0.1', 'Base:  1', 'Force amp-del:  1', 'Fixed matrix entries:  none', 'Sample-clonal entries:  none\t\x1b[0m', '\x1b[95m\x1b[1m[13:14:59]### Reading the input SEG file\t\x1b[0m', '\x1b[95m\x1b[1m[13:14:59]### Scale the read-depth ratios into fractional copy numbers using the provided copy numbers\t\x1b[0m', '\x1b[95m\x1b[1m[13:14:59]### Compute allele-specific fractional copy numbers using BAF\t\x1b[0m', '\x1b[95m\x1b[1m[13:14:59]### Starting coordinate descent algorithm on 100 seeds\t\x1b[0m', '\x1b[92m[13:14:59]## Coordinate Descence {\t\x1b[0m', '\x1b[92m[13:19:46]## 145.996415; \t\x1b[0m', '\x1b[92m[13:20:02]## 142.341898; \t\x1b[0m', '\x1b[92m[13:22:05]## 147.127915; \t\x1b[0m', '\x1b[92m[13:23:02]## 146.004382; \t\x1b[0m', '\x1b[92m[13:25:40]## 145.095409; \t\x1b[0m', '\x1b[92m[13:25:47]## 139.188495; \t\x1b[0m', '\x1b[92m[13:30:45]## 145.436841; \t\x1b[0m', '\x1b[92m[13:30:46]## 141.282114; \t\x1b[0m', '\x1b[92m[13:51:57]## 141.186048; \t\x1b[0m', '\x1b[92m[13:58:40]## 147.374923; \t\x1b[0m', '\x1b[92m[14:15:16]## 147.188123; \t\x1b[0m', '\x1b[92m[14:18:07]## 138.676989; \t\x1b[0m', '\x1b[92m[14:29:45]## 145.521640; \t\x1b[0m', '\x1b[92m[14:39:12]## 146.009024; \t\x1b[0m', '\x1b[92m[14:41:53]## 147.383488; \t\x1b[0m', '\x1b[92m[14:45:43]## 145.930737; \t\x1b[0m', '\x1b[92m[14:46:45]## 145.444727; \t\x1b[0m', '\x1b[92m[14:51:09]## 147.193221; \t\x1b[0m', '\x1b[92m[14:56:03]## 146.530450; \t\x1b[0m', '\x1b[92m[14:56:34]## 148.195757; \t\x1b[0m', '\x1b[92m[15:08:41]## 147.636001; \t\x1b[0m', '\x1b[92m[15:19:48]## 141.854806; \t\x1b[0m', '\x1b[92m[15:24:25]## 145.961607; \t\x1b[0m', '\x1b[92m[15:24:45]## 142.419333; \t\x1b[0m', '\x1b[92m[15:49:23]## 141.375794; \t\x1b[0m', '\x1b[92m[15:58:45]## 143.291579; \t\x1b[0m', '\x1b[92m[18:40:09]## 147.304696; \t\x1b[0m', '']
+
+Unexpected error during solve. Please run `hatchet check-solver` to ensure that the solver is working correctly.[0m
+== mode 2, new: /home/myersm2/miniforge3/envs/hatchet-test/bin/python -m hatchet compute-cn /data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/build_new/solve -i /data1/shahs3/users/myersm2/repos/osteo/results/hatchet2/IID_H134708/bbc/bulk -x /data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708/mode2/new -n 3,5 -p 100 -j 8 -r 6700 --mode 2 -v 2 -eD 9 -eT 15
+{"returncode": 0, "wall_s": 6925.06, "cpu_s": 22785.39, "peak_tree_rss_mb": 950.1, "max_single_rss_mb": 508.5, "peak_python_rss_mb": 441.7}
+# compute-cn benchmark: /data1/shahs3/users/myersm2/hatchet-cn-bench/IID_H134708 (solver cpp)
+
+| mode | version | exit | wall | CPU | peak RSS | C steps (n, total, mean) | U steps (n, total, mean) | chosen | clone order of best |
+|---|---|---|---|---|---|---|---|---|---|
+| 2 | old | 1 | 22672 s | 174090 s | 31.92 GB | 282, 95108.0 s, 337262.3 ms | 282, 92.3 s, 327.4 ms | none | n/a |
+| 2 | new | 0 | 6925 s | 22785 s | 0.93 GB | 998, 3203.9 s, 3210.3 ms | 998, 1700.0 s, 1703.4 ms | diploid.n3 | sorted [39757, 44589] |
+
+Objective per ploidy and clone count (lower is better):
+
+| mode | ploidy | clones | old | new |
+|---|---|---|---|---|
+| 2 | diploid | 3 | 172.354736 | 172.352150 |
+| 2 | diploid | 4 | n/a | 138.219319 |
+| 2 | diploid | 5 | n/a | 114.578150 |
+| 2 | tetraploid | 3 | n/a | 199.218943 |
+| 2 | tetraploid | 4 | n/a | 152.557772 |
+| 2 | tetraploid | 5 | n/a | 140.628315 |
+[2026-09-30T21:16:37.026] error: Detected 1 oom_kill event in StepId=15606404.batch. Some of the step tasks have been OOM Killed.
