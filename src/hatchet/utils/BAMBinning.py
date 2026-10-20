@@ -3,6 +3,7 @@ from collections import deque
 import pysam
 
 import hatchet.utils.ProgressBar as pb
+from hatchet.utils.Supporting import EXCLUDE_FLAGS
 
 
 def bin(
@@ -120,7 +121,7 @@ class Binner(Process):
         return
 
     def binChr(self, bamfile, samplename, chromosome):
-        read_callback = lambda r: r.mapping_quality >= self.q
+        read_callback = lambda r: r.mapping_quality >= self.q and not (r.flag & EXCLUDE_FLAGS)
         sam = pysam.AlignmentFile(bamfile, 'rb')
         bins = deque()
         for start, end in self.regions[chromosome]:

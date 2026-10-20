@@ -109,7 +109,7 @@ def main(args=None):
     big_bb = pd.concat(bbs)
     big_bb = big_bb.sort_values(by=['#CHR', 'START', 'SAMPLE'])
 
-    big_bb['CORRECTED_READS'] = np.NAN
+    big_bb['CORRECTED_READS'] = np.nan
 
     # For each sample, correct read counts to account for differences in coverage (as in HATCHet)
     # (i.e., multiply read counts by total-reads-normal/total-reads-sample)

@@ -10,7 +10,7 @@ from scipy.stats import beta
 import tempfile
 
 import hatchet.utils.ArgParsing as ap
-from hatchet.utils.Supporting import log, logArgs, error, close, indexed_region
+from hatchet.utils.Supporting import log, logArgs, error, close, indexed_region, MPILEUP_EXCLUDE_FLAGS
 from hatchet.utils.multiprocessing import Worker
 
 ALLELES = {'A', 'C', 'G', 'T'}
@@ -318,10 +318,11 @@ class AlleleCounter(Worker):
         Yield (samplename, chromosome, position, [(allele, count), ..]) for each site reported by bcftools, keeping
         only the A/C/G/T alleles.
         """
-        cmd_mpileup = '{} mpileup {} -Ou -f {} --skip-indels -a INFO/AD -q {} -Q {} -d {} -T {}'.format(
+        cmd_mpileup = '{} mpileup {} -Ou -f {} --skip-indels -a INFO/AD --ff {} -q {} -Q {} -d {} -T {}'.format(
             self.bcftools,
             bamfile,
             self.reference,
+            MPILEUP_EXCLUDE_FLAGS,
             self.q,
             self.Q,
             self.dp,

@@ -5,7 +5,7 @@ import subprocess as pr
 from multiprocessing.pool import ThreadPool
 
 from hatchet.utils.ArgParsing import parse_genotype_snps_arguments
-from hatchet.utils.Supporting import log, logArgs, error, indexed_region
+from hatchet.utils.Supporting import log, logArgs, error, indexed_region, MPILEUP_EXCLUDE_FLAGS
 from hatchet.utils.multiprocessing import Worker
 
 
@@ -150,8 +150,8 @@ class Caller(Worker):
             else:
                 os.remove(errname)
 
-        cmd_mpileup = '{} mpileup {} -Ou -f {} --skip-indels -a INFO/AD,AD,DP -q {} -Q {} -d {}'.format(
-            self.bcftools, bamfile, self.reference, self.q, self.Q, self.dp
+        cmd_mpileup = '{} mpileup {} -Ou -f {} --skip-indels -a INFO/AD,AD,DP --ff {} -q {} -Q {} -d {}'.format(
+            self.bcftools, bamfile, self.reference, MPILEUP_EXCLUDE_FLAGS, self.q, self.Q, self.dp
         )
 
         if self.snplist is not None:

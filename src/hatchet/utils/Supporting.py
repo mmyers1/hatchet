@@ -195,6 +195,12 @@ def run(
     return return_codes[0] if singleton else return_codes
 
 
+# Reads excluded from all counting: unmapped, secondary, QC-fail, duplicate and supplementary (4+256+512+1024+2048).
+# EXCLUDE_FLAGS is the bitmask for samtools/mosdepth/pysam; MPILEUP_EXCLUDE_FLAGS is the same set for bcftools --ff.
+EXCLUDE_FLAGS = 3844
+MPILEUP_EXCLUDE_FLAGS = 'UNMAP,SECONDARY,QCFAIL,DUP,SUPPLEMENTARY'
+
+
 @functools.lru_cache(maxsize=None)
 def _indexed_contigs(bamfile):
     import pysam

@@ -11,7 +11,7 @@ from importlib.resources import path
 import hatchet.data
 
 from hatchet.utils.ArgParsing import parse_count_reads_args
-from hatchet.utils.Supporting import log, logArgs, error
+from hatchet.utils.Supporting import log, logArgs, error, EXCLUDE_FLAGS
 
 
 def main(args=None):
@@ -224,6 +224,8 @@ def run_mosdepth(outdir, sample_name, bam, threads, mosdepth, readquality):
                 mosdepth,
                 '-t',
                 str(threads),
+                '-F',
+                str(EXCLUDE_FLAGS),
                 '-Q',
                 str(readquality),
                 os.path.join(outdir, sample_name),
@@ -255,7 +257,7 @@ def count_chromosome(ch, outdir, samtools, bam, sample_name, readquality, compre
         # interrupted run leaves no partial output file for a later run to skip.
         tmpfile = outfile + '.tmp'
         with open(tmpfile, 'w') as out:
-            st = sp.Popen((samtools, 'view', '-q', str(readquality), bam, ch), stdout=sp.PIPE)
+            st = sp.Popen((samtools, 'view', '-F', str(EXCLUDE_FLAGS), '-q', str(readquality), bam, ch), stdout=sp.PIPE)
             cut = sp.Popen(('cut', '-f', '4'), stdin=st.stdout, stdout=sp.PIPE)
             st.stdout.close()   # so that samtools gets SIGPIPE if cut exits early
             gz = sp.Popen(('gzip', '-{}'.format(compression_level)), stdin=cut.stdout, stdout=out)
@@ -541,8 +543,9 @@ def chromosome_arrays_exist(outdir, ch):
 def total_counts_from_arrays(outdir, chromosomes, names):
     """
     Total number of reads of each sample over the given chromosomes, from the count arrays. Their read-start columns
-    count every read reported by `samtools view -q <readquality> <bam> <chromosome>` (the last row holds the coverage
-    at the chromosome end instead), so they sum to `samtools view -c -q <readquality> <bam> <chromosome>`.
+    count every read reported by `samtools view -F 3844 -q <readquality> <bam> <chromosome>` (the last row holds the
+    coverage at the chromosome end instead), so they sum to
+    `samtools view -c -F 3844 -q <readquality> <bam> <chromosome>`.
     """
     with open(os.path.join(outdir, 'samples.txt')) as f:
         array_names = [line.rstrip('\n') for line in f]

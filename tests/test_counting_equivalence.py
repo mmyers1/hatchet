@@ -308,11 +308,20 @@ def test_count_chromosome_writes_read_starts(tmp_path):
 
     header = {'HD': {'VN': '1.6', 'SO': 'coordinate'}, 'SQ': [{'SN': 'chr1', 'LN': 1000}, {'SN': 'chr2', 'LN': 1000}]}
     bam = str(tmp_path / 'tiny.bam')
-    reads = [('chr1', 10, 30), ('chr1', 10, 5), ('chr1', 200, 60), ('chr2', 50, 60)]   # (contig, start, MAPQ)
+    # (contig, start, MAPQ, flag): the supplementary (0x800) and duplicate (0x400) reads are excluded by -F 3844
+    reads = [
+        ('chr1', 10, 30, 0),
+        ('chr1', 10, 5, 0),
+        ('chr1', 100, 60, 0x800),
+        ('chr1', 150, 60, 0x400),
+        ('chr1', 200, 60, 0),
+        ('chr2', 50, 60, 0),
+    ]
     with pysam.AlignmentFile(bam, 'wb', header=header) as f:
-        for i, (contig, start, mapq) in enumerate(reads):
+        for i, (contig, start, mapq, flag) in enumerate(reads):
             read = pysam.AlignedSegment(f.header)
             read.query_name = f'r{i}'
+            read.flag = flag
             read.reference_name = contig
             read.reference_start = start - 1
             read.mapping_quality = mapq
@@ -323,7 +332,7 @@ def test_count_chromosome_writes_read_starts(tmp_path):
 
     count_reads.count_chromosome('chr1', str(tmp_path), 'samtools', bam, 'S', 20)
     with gzip.open(tmp_path / 'S.chr1.starts.gz', 'rt') as f:
-        assert f.read() == '10\n200\n'   # MAPQ >= 20 on chr1 only
+        assert f.read() == '10\n200\n'   # MAPQ >= 20, primary non-duplicate reads on chr1 only
     assert not os.path.exists(tmp_path / 'S.chr1.starts.gz.tmp')
 
 

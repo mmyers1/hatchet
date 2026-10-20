@@ -1,0 +1,1147 @@
+=== stage: count
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________________________ test_count_reads _______________________________
+
+_mock0 = <MagicMock name='knownRegions' id='140619622096032'>
+_mock1 = <MagicMock name='extractChromosomes' id='140619621476960'>
+bams = ('/data1/shahs3/users/myersm2/repos/hatchet/data/normal.bam', ['/data1/shahs3/users/myersm2/repos/hatchet/data/bulk_03...0_02normal.sorted.bam', '/data1/shahs3/users/myersm2/repos/hatchet/data/bulk_Noneclone1_09clone0_01normal.sorted.bam'])
+output_folder = '/data1/shahs3/users/myersm2/repos/hatchet/tests/out'
+
+    @pytest.mark.skipif(not config.paths.reference, reason='paths.reference not set')
+    @patch('hatchet.utils.ArgParsing.extractChromosomes', return_value=['chr22'])
+    @patch(
+        'hatchet.utils.count_reads_fw.knownRegions',
+        return_value={'chr22': [(30256931, 32622323)]},
+    )
+    def test_count_reads(_mock0, _mock1, bams, output_folder):
+        normal_bam, tumor_bams = bams
+
+        count_reads(
+            args=['-N', normal_bam, '-T']
+            + tumor_bams
+            + [
+                '-b',
+                '50kb',
+                '-st',
+                config.paths.samtools,
+                '-S',
+                'Normal',
+                'Tumor1',
+                'Tumor2',
+                'Tumor3',
+                '-g',
+                config.paths.reference,
+                '-j',
+                '12',
+                '-q',
+                '11',
+                '-O',
+                os.path.join(output_folder, 'bin/normal.1bed'),
+                '-o',
+                os.path.join(output_folder, 'bin/bulk.1bed'),
+                '-v',
+            ]
+        )
+
+        df1 = pd.read_csv(f'{output_folder}/bin/normal.1bed', sep='\t')
+        df2 = pd.read_csv(f'{this_dir}/data/fw/bin/normal.1bed', sep='\t')
+        assert_frame_equal(df1, df2)
+
+        df1 = pd.read_csv(f'{output_folder}/bin/bulk.1bed', sep='\t')
+        df2 = pd.read_csv(f'{this_dir}/data/fw/bin/bulk.1bed', sep='\t')
+>       assert_frame_equal(df1, df2)
+
+tests/test_steps.py:109:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+pandas/_libs/testing.pyx:55: in pandas._libs.testing.assert_almost_equal
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+>   ???
+E   AssertionError: DataFrame.columns are different
+E
+E   DataFrame.columns values are different (20.0 %)
+E   [left]:  Index(['chr22', '30256931', '30306931', 'Tumor1', '14576'], dtype='object')
+E   [right]: Index(['chr22', '30256931', '30306931', 'Tumor1', '14582'], dtype='object')
+E   At positional index 4, first diff: 14576 != 14582
+
+pandas/_libs/testing.pyx:173: AssertionError
+----------------------------- Captured stderr call -----------------------------
+[1m[95m[2026-Oct-19 22:06:45]# Parsing and checking input arguments
+[0m[92m
+	normal: ('/data1/shahs3/users/myersm2/repos/hatchet/data/normal.bam', 'Normal')
+	samples: {('/data1/shahs3/users/myersm2/repos/hatchet/data/bulk_08clone1_Noneclone0_02normal.sorted.bam', 'Tumor2'), ('/data1/shahs3/users/myersm2/repos/hatchet/data/bulk_Noneclone1_09clone0_01normal.sorted.bam', 'Tumor3'), ('/data1/shahs3/users/myersm2/repos/hatchet/data/bulk_03clone1_06clone0_01normal.sorted.bam', 'Tumor1')}
+	chromosomes: ['chr22']
+	samtools: /data1/shahs3/users/myersm2/repos/hatchet/samtools-1.7/samtools
+	regions: None
+	size: 50000
+	reference: /data1/shahs3/users/myersm2/repos/hatchet/reference/hg19.fa
+	refdict: /data1/shahs3/users/myersm2/repos/hatchet/reference/hg19.dict
+	j: 12
+	q: 11
+	outputNormal: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/bin/normal.1bed
+	outputTumors: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/bin/bulk.1bed
+	outputTotal: total.tsv
+	verbose: True
+[0m[1m[95m[2026-Oct-19 22:06:45]# Retrieving genomic regions to consider from maximum chromosome length
+[0m[92mregions:  chr22: [(30256931, 32622323)]
+[0m[1m[95m[2026-Oct-19 22:06:45]# Binning and counting the normal sample
+[0m[2K[96m[2026-Oct-19 22:06:45]Binner-1 starts on Normal for chr22)[0m
+[96mProgress:[0m |----------------------------------------| [96m0.0% Complete[0m[2K[96m[2026-Oct-19 22:06:46]Binner-1 ends on Normal for chr22)[0m
+[96mProgress:[0m |████████████████████████████████████████| [96m100.0% Complete[0m
+[1m[95m[2026-Oct-19 22:06:46]# Writing the read counts for bins of normal sample
+[0m[1m[95m[2026-Oct-19 22:06:46]# Binning and counting the tumor samples
+[0m[2K[96m[2026-Oct-19 22:06:46]Binner-2 starts on Tumor2 for chr22)[0m
+[96mProgress:[0m |----------------------------------------| [96m0.0% Complete[0m[2K[96m[2026-Oct-19 22:06:46]Binner-3 starts on Tumor3 for chr22)[0m
+[96mProgress:[0m |----------------------------------------| [96m0.0% Complete[0m[2K[96m[2026-Oct-19 22:06:46]Binner-4 starts on Tumor1 for chr22)[0m
+[96mProgress:[0m |----------------------------------------| [96m0.0% Complete[0m[2K[96m[2026-Oct-19 22:06:47]Binner-3 ends on Tumor3 for chr22)[0m
+[96mProgress:[0m |█████████████---------------------------| [96m33.3% Complete[0m[2K[96m[2026-Oct-19 22:06:47]Binner-4 ends on Tumor1 for chr22)[0m
+[96mProgress:[0m |██████████████████████████--------------| [96m66.7% Complete[0m[2K[96m[2026-Oct-19 22:06:47]Binner-2 ends on Tumor2 for chr22)[0m
+[96mProgress:[0m |████████████████████████████████████████| [96m100.0% Complete[0m
+[1m[95m[2026-Oct-19 22:06:47]# Writing the read counts for bins of tumor samples
+[0m[1m[95m[2026-Oct-19 22:06:47]# Counting total number of reads for normal and tumor samples
+[0m[2K[96m[2026-Oct-19 22:06:47]TotalCounter-5 starts on Tumor2 for chr22[0m
+[96mProgress:[0m |----------------------------------------| [96m0.0% Complete[0m[2K[96m[2026-Oct-19 22:06:47]TotalCounter-6 starts on Tumor3 for chr22[0m
+[96mProgress:[0m |----------------------------------------| [96m0.0% Complete[0m[2K[96m[2026-Oct-19 22:06:47]TotalCounter-7 starts on Tumor1 for chr22[0m
+[96mProgress:[0m |----------------------------------------| [96m0.0% Complete[0m[2K[96m[2026-Oct-19 22:06:47]TotalCounter-8 starts on Normal for chr22[0m
+[96mProgress:[0m |----------------------------------------| [96m0.0% Complete[0m[2K[96m[2026-Oct-19 22:07:01]TotalCounter-6 ends on Tumor3 for chr22[0m
+[96mProgress:[0m |██████████------------------------------| [96m25.0% Complete[0m[2K[96m[2026-Oct-19 22:07:01]TotalCounter-5 ends on Tumor2 for chr22[0m
+[96mProgress:[0m |████████████████████--------------------| [96m50.0% Complete[0m[2K[96m[2026-Oct-19 22:07:01]TotalCounter-7 ends on Tumor1 for chr22[0m
+[96mProgress:[0m |██████████████████████████████----------| [96m75.0% Complete[0m[2K[96m[2026-Oct-19 22:07:03]TotalCounter-8 ends on Normal for chr22[0m
+[96mProgress:[0m |████████████████████████████████████████| [96m100.0% Complete[0m
+[1m[95m[2026-Oct-19 22:07:03]# Writing the total read counts for all samples in total.tsv
+[0m
+=============================== warnings summary ===============================
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:64
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:64: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+    prop = Group((name + Suppress("=") + comma_separated(value)) | oneOf(_CONSTANTS))
+
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:45
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_steps.py::test_count_reads - AssertionError: DataFrame.colu...
+1 failed, 14 warnings in 20.62s
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________________________ test_count_reads _______________________________
+
+_ = <MagicMock name='extractChromosomes' id='140182025084112'>
+bams = ('/data1/shahs3/users/myersm2/repos/hatchet/data/normal.bam', ['/data1/shahs3/users/myersm2/repos/hatchet/data/bulk_03...0_02normal.sorted.bam', '/data1/shahs3/users/myersm2/repos/hatchet/data/bulk_Noneclone1_09clone0_01normal.sorted.bam'])
+output_folder = '/data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw'
+
+    @patch('hatchet.utils.ArgParsing.extractChromosomes', return_value=['chr22'])
+    def test_count_reads(_, bams, output_folder):
+        normal_bam, tumor_bams = bams
+
+        count_reads(
+            args=['-N', normal_bam, '-T']
+            + tumor_bams
+            + [
+                '-st',
+                config.paths.samtools,
+                '-S',
+                'Normal',
+                'Tumor1',
+                'Tumor2',
+                'Tumor3',
+                '-j',
+                '1',
+                '-b',
+                os.path.join(this_dir, 'data', 'vw', 'baf', 'bulk.1bed'),
+                '-O',
+                os.path.join(output_folder, 'rdr'),
+                '-V',
+                'hg19',
+            ]
+        )
+
+        arr1 = np.loadtxt(os.path.join(output_folder, 'rdr', 'chr22.thresholds.gz'))
+        arr2 = np.loadtxt(os.path.join(output_folder, 'rdr', 'chr22.total.gz'))
+        arr3 = [l for l in open(os.path.join(output_folder, 'rdr', 'samples.txt'), 'r')]
+        arr4 = pd.read_table(os.path.join(output_folder, 'rdr', 'total.tsv'))
+
+        truth1 = np.loadtxt(os.path.join(this_dir, 'data', 'vw', 'rdr', 'chr22.thresholds.gz'))
+        truth2 = np.loadtxt(os.path.join(this_dir, 'data', 'vw', 'rdr', 'chr22.total.gz'))
+        truth3 = [l for l in open(os.path.join(this_dir, 'data', 'vw', 'rdr', 'samples.txt'), 'r')]
+        truth4 = pd.read_table(os.path.join(this_dir, 'data', 'vw', 'rdr', 'total.tsv'))
+
+        assert_array_equal(arr1, truth1)
+>       assert_array_equal(arr2, truth2)
+
+tests/test_steps_vw.py:78:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/numpy/_utils/__init__.py:85: in wrapper
+    return fun(*args, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+args = (<built-in function eq>, array([[0.00000e+00, 0.00000e+00, 0.00000e+00, ..., 0.00000e+00,
+        0.00000e+00, 0.00000...00, 2.90000e+01],
+       [0.00000e+00, 0.00000e+00, 0.00000e+00, ..., 0.00000e+00,
+        0.00000e+00, 0.00000e+00]]))
+kwds = {'err_msg': '', 'header': 'Arrays are not equal', 'strict': False, 'verbose': True}
+
+    @wraps(func)
+    def inner(*args, **kwds):
+        with self._recreate_cm():
+>           return func(*args, **kwds)
+E           AssertionError:
+E           Arrays are not equal
+E
+E           Mismatched elements: 12 / 2011736 (0.000596%)
+E           Max absolute difference among violations: 7.
+E           Max relative difference among violations: 0.15625
+E            ACTUAL: array([[0.00000e+00, 0.00000e+00, 0.00000e+00, ..., 0.00000e+00,
+E                   0.00000e+00, 0.00000e+00],
+E                  [5.04895e+05, 0.00000e+00, 3.69448e+05, ..., 0.00000e+00,...
+E            DESIRED: array([[0.00000e+00, 0.00000e+00, 0.00000e+00, ..., 0.00000e+00,
+E                   0.00000e+00, 0.00000e+00],
+E                  [5.04895e+05, 0.00000e+00, 3.69448e+05, ..., 0.00000e+00,...
+
+/home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/contextlib.py:79: AssertionError
+----------------------------- Captured stderr call -----------------------------
+[1m[95m[2026-Oct-19 22:07:06]# Parsing and checking input arguments
+[0m[92m
+	bams: ['/data1/shahs3/users/myersm2/repos/hatchet/data/normal.bam', '/data1/shahs3/users/myersm2/repos/hatchet/data/bulk_03clone1_06clone0_01normal.sorted.bam', '/data1/shahs3/users/myersm2/repos/hatchet/data/bulk_08clone1_Noneclone0_02normal.sorted.bam', '/data1/shahs3/users/myersm2/repos/hatchet/data/bulk_Noneclone1_09clone0_01normal.sorted.bam']
+	names: ['Normal', 'Tumor1', 'Tumor2', 'Tumor3']
+	chromosomes: ['chr22']
+	samtools: /data1/shahs3/users/myersm2/repos/hatchet/samtools-1.7/samtools
+	mosdepth: mosdepth
+	tabix: tabix
+	j: 1
+	outdir: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw/rdr
+	use_chr: True
+	refversion: hg19
+	baf_file: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/vw/baf/bulk.1bed
+	readquality: 11
+[0m[1m[95m[2026-Oct-19 22:07:06]Sample Normal -- Starting chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:07:33]Sample Normal -- Done chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:07:33]Sample Tumor1 -- Starting chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:07:58]Sample Tumor1 -- Done chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:07:58]Sample Tumor2 -- Starting chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:08:22]Sample Tumor2 -- Done chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:08:22]Sample Tumor3 -- Starting chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:08:46]Sample Tumor3 -- Done chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:08:46]Starting mosdepth on sample Normal with 1 threads
+[0m[1m[95m[2026-Oct-19 22:09:22]Done mosdepth on sample Normal
+[0m[1m[95m[2026-Oct-19 22:09:22]Starting mosdepth on sample Tumor1 with 1 threads
+[0m[1m[95m[2026-Oct-19 22:09:55]Done mosdepth on sample Tumor1
+[0m[1m[95m[2026-Oct-19 22:09:55]Starting mosdepth on sample Tumor2 with 1 threads
+[0m[1m[95m[2026-Oct-19 22:10:28]Done mosdepth on sample Tumor2
+[0m[1m[95m[2026-Oct-19 22:10:28]Starting mosdepth on sample Tumor3 with 1 threads
+[0m[1m[95m[2026-Oct-19 22:11:01]Done mosdepth on sample Tumor3
+[0m[92mReading SNPs file /data1/shahs3/users/myersm2/repos/hatchet/tests/data/vw/baf/bulk.1bed
+[0m[92mLoading chromosome chr22
+[0m[92mLoading counts for chromosome chr22
+[0m[92mDone chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:11:27]# Array forming completed successfully, removing intermediate count files.
+[0m[1m[95m[2026-Oct-19 22:11:27]# Counting total number of reads for normal and tumor samples
+[0m[1m[95m[2026-Oct-19 22:11:27]# Writing the total read counts for all samples in /data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw/rdr/total.tsv
+[0m
+=========================== short test summary info ============================
+FAILED tests/test_steps_vw.py::test_count_reads - AssertionError:
+1 failed in 263.51s (0:04:23)
+=== stage: combine
+[1m[95m[2026-Oct-19 22:11:28]# Parsing and checking input arguments
+[0m[92m
+	normalbins: tests/data/fw/bin/normal.1bed
+	tumorbins: tests/data/fw/bin/bulk.1bed
+	tumorbafs: tests/data/fw/baf/bulk.1bed
+	phase: None
+	block: 25000
+	diploidbaf: 0.1
+	totalcounts: None
+	gamma: 0.05
+	seed: 12
+	verbose: False
+	disable: False
+[0m[1m[95m[2026-Oct-19 22:11:28]# Reading and checking the bin count files for computing read-depth ratios
+[0m[1m[95m[2026-Oct-19 22:11:28]# Reading and checking the allele count files for computing BAF
+[0m[1m[95m[2026-Oct-19 22:11:29]# Combine the bin and allele counts to obtain BAF and RD for each bin
+[0m[2KProgress: |----------------------------------------| 2.1% Complete [Combine bin (30256931, 30306931) in chromosome chr22][2KProgress: |█---------------------------------------| 4.2% Complete [Combine bin (30306931, 30356931) in chromosome chr22][2KProgress: |██--------------------------------------| 6.2% Complete [Combine bin (30356931, 30406931) in chromosome chr22][2KProgress: |███-------------------------------------| 8.3% Complete [Combine bin (30406931, 30456931) in chromosome chr22][2KProgress: |████------------------------------------| 10.4% Complete [Combine bin (30456931, 30506931) in chromosome chr22][2KProgress: |█████-----------------------------------| 12.5% Complete [Combine bin (30506931, 30556931) in chromosome chr22][2KProgress: |█████-----------------------------------| 14.6% Complete [Combine bin (30556931, 30606931) in chromosome chr22][2KProgress: |██████----------------------------------| 16.7% Complete [Combine bin (30606931, 30656931) in chromosome chr22][2KProgress: |███████---------------------------------| 18.8% Complete [Combine bin (30656931, 30706931) in chromosome chr22][2KProgress: |████████--------------------------------| 20.8% Complete [Combine bin (30706931, 30756931) in chromosome chr22][2KProgress: |█████████-------------------------------| 22.9% Complete [Combine bin (30756931, 30806931) in chromosome chr22][2KProgress: |██████████------------------------------| 25.0% Complete [Combine bin (30806931, 30856931) in chromosome chr22][2KProgress: |██████████------------------------------| 27.1% Complete [Combine bin (30856931, 30906931) in chromosome chr22][2KProgress: |███████████-----------------------------| 29.2% Complete [Combine bin (30906931, 30956931) in chromosome chr22][2KProgress: |████████████----------------------------| 31.2% Complete [Combine bin (30956931, 31006931) in chromosome chr22][2KProgress: |█████████████---------------------------| 33.3% Complete [Combine bin (31006931, 31056931) in chromosome chr22][2KProgress: |██████████████--------------------------| 35.4% Complete [Combine bin (31056931, 31106931) in chromosome chr22][2KProgress: |███████████████-------------------------| 37.5% Complete [Combine bin (31106931, 31156931) in chromosome chr22][2KProgress: |███████████████-------------------------| 39.6% Complete [Combine bin (31156931, 31206931) in chromosome chr22][2KProgress: |████████████████------------------------| 41.7% Complete [Combine bin (31206931, 31256931) in chromosome chr22][2KProgress: |█████████████████-----------------------| 43.8% Complete [Combine bin (31256931, 31306931) in chromosome chr22][2KProgress: |██████████████████----------------------| 45.8% Complete [Combine bin (31306931, 31356931) in chromosome chr22][2KProgress: |███████████████████---------------------| 47.9% Complete [Combine bin (31356931, 31406931) in chromosome chr22][2KProgress: |████████████████████--------------------| 50.0% Complete [Combine bin (31406931, 31456931) in chromosome chr22][2KProgress: |████████████████████--------------------| 52.1% Complete [Combine bin (31456931, 31506931) in chromosome chr22][2KProgress: |█████████████████████-------------------| 54.2% Complete [Combine bin (31506931, 31556931) in chromosome chr22][2KProgress: |██████████████████████------------------| 56.2% Complete [Combine bin (31556931, 31606931) in chromosome chr22][2KProgress: |███████████████████████-----------------| 58.3% Complete [Combine bin (31606931, 31656931) in chromosome chr22][2KProgress: |████████████████████████----------------| 60.4% Complete [Combine bin (31656931, 31706931) in chromosome chr22][2KProgress: |█████████████████████████---------------| 62.5% Complete [Combine bin (31706931, 31756931) in chromosome chr22][2KProgress: |█████████████████████████---------------| 64.6% Complete [Combine bin (31756931, 31806931) in chromosome chr22][2KProgress: |██████████████████████████--------------| 66.7% Complete [Combine bin (31806931, 31856931) in chromosome chr22][2KProgress: |███████████████████████████-------------| 68.8% Complete [Combine bin (31856931, 31906931) in chromosome chr22][2KProgress: |████████████████████████████------------| 70.8% Complete [Combine bin (31906931, 31956931) in chromosome chr22][2KProgress: |█████████████████████████████-----------| 72.9% Complete [Combine bin (31956931, 32006931) in chromosome chr22][2KProgress: |██████████████████████████████----------| 75.0% Complete [Combine bin (32006931, 32056931) in chromosome chr22][2KProgress: |██████████████████████████████----------| 77.1% Complete [Combine bin (32056931, 32106931) in chromosome chr22][2KProgress: |███████████████████████████████---------| 79.2% Complete [Combine bin (32106931, 32156931) in chromosome chr22][2KProgress: |████████████████████████████████--------| 81.2% Complete [Combine bin (32156931, 32206931) in chromosome chr22][2KProgress: |█████████████████████████████████-------| 83.3% Complete [Combine bin (32206931, 32256931) in chromosome chr22][2KProgress: |██████████████████████████████████------| 85.4% Complete [Combine bin (32256931, 32306931) in chromosome chr22][2KProgress: |███████████████████████████████████-----| 87.5% Complete [Combine bin (32306931, 32356931) in chromosome chr22][2KProgress: |███████████████████████████████████-----| 89.6% Complete [Combine bin (32356931, 32406931) in chromosome chr22][2KProgress: |████████████████████████████████████----| 91.7% Complete [Combine bin (32406931, 32456931) in chromosome chr22][2KProgress: |█████████████████████████████████████---| 93.8% Complete [Combine bin (32456931, 32506931) in chromosome chr22][2KProgress: |██████████████████████████████████████--| 95.8% Complete [Combine bin (32506931, 32556931) in chromosome chr22][2KProgress: |███████████████████████████████████████-| 97.9% Complete [Combine bin (32556931, 32606931) in chromosome chr22][2KProgress: |████████████████████████████████████████| 100.0% Complete [Combine bin (32606931, 32622323) in chromosome chr22]
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_____________________________ test_combine_counts ______________________________
+
+_ = <MagicMock name='extractChromosomes' id='139992269373840'>
+output_folder = '/data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw'
+
+    @pytest.mark.skipif(not config.paths.reference, reason='paths.reference not set')
+    @patch('hatchet.utils.ArgParsing.extractChromosomes', return_value=['chr22'])
+    def test_combine_counts(_, output_folder):
+        # Test without phasing
+        combine_counts(
+            args=[
+                '-A',
+                os.path.join(this_dir, 'data', 'vw', 'rdr'),
+                '-t',
+                os.path.join(this_dir, 'data', 'vw', 'rdr', 'total.tsv'),
+                '-j',
+                '1',
+                '-b',
+                os.path.join(this_dir, 'data', 'vw', 'baf', 'bulk.1bed'),
+                '-o',
+                os.path.join(output_folder, 'bb', 'bulk_nophase.bb'),
+                '-r',
+                config.paths.reference,
+                '-V',
+                'hg19',
+            ]
+        )
+        df1 = pd.read_csv(os.path.join(output_folder, 'bb', 'bulk_nophase.bb'), sep='\t')
+        df2 = pd.read_csv(os.path.join(this_dir, 'data', 'vw', 'bb', 'bulk_nophase.bb'), sep='\t')
+>       assert_frame_equal(df1, df2)
+
+tests/test_steps_vw.py:107:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+pandas/_libs/testing.pyx:55: in pandas._libs.testing.assert_almost_equal
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+>   ???
+E   AssertionError: DataFrame.iloc[:, 4] (column name="RD") are different
+E
+E   DataFrame.iloc[:, 4] (column name="RD") values are different (1.41529 %)
+E   [index]: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, ...]
+E   [left]:  [0.8717054404197265, 0.6109361099895944, 1.0233260793649024, 0.8536352465405997, 0.6173420370555287, 0.997523132292796, 0.8945358714199869, 0.611511620460748, 1.0692710543539423, 0.8716751998504613, 0.6095423087556886, 1.0403569788970328, 0.9017869442068698, 0.6243313890326745, 1.0517380891049457, 0.9246190399618978, 0.6415019678958863, 1.0799086699678562, 0.9081582164562364, 0.6245129182435466, 1.0607568538789778, 0.859290094938006, 0.6164833480686973, 1.0035805737043666, 0.9083488603642126, 0.620563100851891, 1.069326815399065, 0.8949895507230964, 0.6114551917851692, 1.0640133126309357, 0.8737882670849959, 0.5930050848643684, 1.0559302837210316, 0.8806074334664248, 0.6118046363539609, 1.0266489620939327, 0.8872360866022437, 0.6080808649695553, 1.0508461506271225, 0.8924922480445022, 0.6237008052911651, 1.0605869639938756, 0.8830042460188737, 0.6292874578724683, 1.0574750559995951, 0.8917801240809651, 0.6066248682219239, 1.0546496954089368, 0.9015798217552132, 0.6042447063213557, 1.0751412125740545, 0.8750259449340263, 0.6030602378383042, 1.0404400030436871, 0.8656205920508815, 0.6098570043087803, 1.0286649865853574, 0.8801837560581343, 0.621008153382952, 1.048053365489569, 0.9165657695071804, 0.6226526626463034, 1.0757803514976891, 0.8973420860177532, 0.6105505447997439, 1.0749649221632531, 0.8676551483915848, 0.6129106587402864, 1.02809027139569, 0.8636995237914634, 0.5911918903848264, 1.029422533489872, 0.8481861440722658, 0.5948864734850994, 1.0134474888428608, 0.9149658442131796, 0.6169143377779005, 1.0721646872463084, 0.9411476978217472, 0.6886849091632661, 1.0505657314206762, 1.078579226041328, 1.0417029175076338, 1.0762371521624008, 1.0469969351619817, 1.0073476518374187, 1.0460371090011484, 0.9818751281994896, 0.9837333603078084, 0.997037508574073, 1.0725668237868988, 1.011778433470629, 1.1013710394509753, 1.0436597436849293, 1.007210362674625, 1.0580604636435138, 1.0149110339852148, 0.9958469084546115, 1.0217015958206832, 1.0283119290653953, ...]
+E   [right]: [0.8717055658066908, 0.6109362709630984, 1.0233268277117018, 0.8536353695188338, 0.6173421996848365, 0.9975238617589026, 0.8945360003193161, 0.6115117815496343, 1.0692718362860123, 0.8716753253719253, 0.6095424693392445, 1.040357739689856, 0.9017870742055538, 0.6243315534901458, 1.0517388582125848, 0.9246191733858696, 0.6415021368570983, 1.0799094596698011, 0.9081583474916374, 0.6245130827374723, 1.060757629580705, 0.8592902189004068, 0.6164835104450339, 1.003581307591261, 0.9083489913229238, 0.6205632643146095, 1.0693275973681071, 0.8949896797817352, 0.6114553528448814, 1.0640140907129876, 0.87378839290398, 0.5930052410922658, 1.05593105590272, 0.8806075600101966, 0.6118047975766538, 1.0266497128782983, 0.8872362146481311, 0.6080810251274211, 1.050846919077072, 0.8924923767661035, 0.6237009695826163, 1.0604862964644126, 0.8830043731078454, 0.6292876236884871, 1.0574758293301456, 0.891780252655562, 0.606625028024114, 1.054650466654125, 0.9015799517313922, 0.6042448654987197, 1.0751419988053263, 0.875026071197771, 0.6030603966796624, 1.040440763887256, 0.8656207169709524, 0.609857164934276, 1.0286657388143825, 0.8801838830668637, 0.6210083169467928, 1.0480541318968437, 0.9165659017732894, 0.6226528266424719, 1.075781138180658, 0.8973422155213044, 0.610550705607774, 1.0749657082501798, 0.8676552736101175, 0.6129108201698823, 1.02809102320463, 0.8636996484355728, 0.591192046094179, 1.0294232862728845, 0.8481862664669183, 0.5948866301685389, 1.0134482299439134, 0.9149659762593514, 0.61691450026333, 1.0721654712864916, 0.9411478336322152, 0.688685090551539, 1.0505664996650632, 1.0785793816790767, 1.0417031918757451, 1.07623793917954, 1.0469970862569655, 1.0073479171592463, 1.0460378739359206, 0.9818752697722036, 0.9837336194303272, 0.9970382376793316, 1.072566978579355, 1.0117786999550276, 1.1013718448479548, 1.04365989426264, 1.0072106279616486, 1.058061237369215, 1.0149111801004995, 0.9958471708172104, 1.0217023429728194, 1.0283120774437609, ...]
+E   At positional index 41, first diff: 1.0605869639938756 != 1.0604862964644126
+
+pandas/_libs/testing.pyx:173: AssertionError
+----------------------------- Captured stdout call -----------------------------
+    #CHR     START       END  SAMPLE  ...  CHR        GC  UNCORR_RD    GCCORR
+0  chr22  17900174  17921308  Tumor1  ...   22  0.414025   0.913322  1.082451
+1  chr22  17900174  17921308  Tumor2  ...   22  0.414025   0.661082  1.095292
+2  chr22  17900174  17921308  Tumor3  ...   22  0.414025   1.053985  1.072804
+3  chr22  17921309  17942571  Tumor1  ...   22  0.434484   0.894885  1.083051
+4  chr22  17921309  17942571  Tumor2  ...   22  0.434484   0.668266  1.095706
+5  chr22  17921309  17942571  Tumor3  ...   22  0.434484   1.027625  1.073030
+6  chr22  17942572  17966996  Tumor1  ...   22  0.438094   0.937902  1.083213
+7  chr22  17942572  17966996  Tumor2  ...   22  0.438094   0.662036  1.095840
+8  chr22  17942572  17966996  Tumor3  ...   22  0.438094   1.101597  1.073087
+9  chr22  17966997  17993515  Tumor1  ...   22  0.427936   0.913585  1.082801
+
+[10 rows x 18 columns]
+----------------------------- Captured stderr call -----------------------------
+[1m[95m[2026-Oct-19 22:11:32]# Parsing and checking input arguments
+[0m[92mIdentified 1 chromosomes.
+[0m[92m
+	baffile: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/vw/baf/bulk.1bed
+	outfile: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw/bb/bulk_nophase.bb
+	referencefasta: /data1/shahs3/users/myersm2/repos/hatchet/reference/hg19.fa
+	sample_names: ['Normal', 'Tumor1', 'Tumor2', 'Tumor3']
+	min_snp_reads: 5000
+	min_total_reads: 5000
+	use_chr: True
+	processes: 1
+	chromosomes: ['chr22']
+	array: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/vw/rdr
+	totalcounts: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/vw/rdr/total.tsv
+	phase: None
+	blocksize: 25000
+	max_snps_per_block: 10
+	test_alpha: 0.1
+	multisample: True
+	ref_version: hg19
+[0m[92mLoading intermediate files for chromosome chr22
+[0m[92mBinning p arm of chromosome chr22
+[0m[92mNo SNPs found in p arm for chr22
+[0m[92mBinning q arm of chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:12:04]Correcting haplotype switches on q arm...
+[0m[92mFound haplotype switches in  0.00% of bins
+[0m[92mInsufficient haplotype switching detected (<[0.01]), skipping correction.
+[0m[92mDone chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:12:04]# Merging per-chromosome bb files and correcting read counts
+[0m[1m[95m[2026-Oct-19 22:12:04]# Performing GC bias correction on read depth signal
+[0m[1m[95m[2026-Oct-19 22:12:05]# Done
+[0m
+_________________________ test_combine_counts_phasing __________________________
+
+_ = <MagicMock name='extractChromosomes' id='139992134446480'>
+output_folder = '/data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw'
+
+    @pytest.mark.skipif(not config.paths.reference, reason='paths.reference not set')
+    @patch('hatchet.utils.ArgParsing.extractChromosomes', return_value=['chr22'])
+    def test_combine_counts_phasing(_, output_folder):
+        # Test with phasing
+        combine_counts(
+            args=[
+                '-A',
+                os.path.join(this_dir, 'data', 'vw', 'rdr'),
+                '-t',
+                os.path.join(this_dir, 'data', 'vw', 'rdr', 'total.tsv'),
+                '-j',
+                '1',
+                '-b',
+                os.path.join(this_dir, 'data', 'vw', 'baf', 'bulk.1bed'),
+                '-o',
+                os.path.join(output_folder, 'bb', 'bulk_yesphase.bb'),
+                '-V',
+                'hg19',
+                '-r',
+                config.paths.reference,
+                '-p',
+                os.path.join(this_dir, 'data', 'vw', 'phase', 'phased.vcf.gz'),
+            ]
+        )
+
+        df3 = pd.read_csv(os.path.join(output_folder, 'bb', 'bulk_yesphase.bb'), sep='\t')
+        df4 = pd.read_csv(
+            os.path.join(this_dir, 'data', 'vw', 'bb', 'bulk_yesphase.bb'),
+            sep='\t',
+        )
+>       assert_frame_equal(df3, df4)
+
+tests/test_steps_vw.py:140:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+pandas/_libs/testing.pyx:55: in pandas._libs.testing.assert_almost_equal
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+>   ???
+E   AssertionError: DataFrame.iloc[:, 4] (column name="RD") are different
+E
+E   DataFrame.iloc[:, 4] (column name="RD") values are different (1.41529 %)
+E   [index]: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, ...]
+E   [left]:  [0.8717054404197265, 0.6109361099895944, 1.0233260793649024, 0.8536352465405997, 0.6173420370555287, 0.997523132292796, 0.8945358714199869, 0.611511620460748, 1.0692710543539423, 0.8716751998504613, 0.6095423087556886, 1.0403569788970328, 0.9017869442068698, 0.6243313890326745, 1.0517380891049457, 0.9246190399618978, 0.6415019678958863, 1.0799086699678562, 0.9081582164562364, 0.6245129182435466, 1.0607568538789778, 0.859290094938006, 0.6164833480686973, 1.0035805737043666, 0.9083488603642126, 0.620563100851891, 1.069326815399065, 0.8949895507230964, 0.6114551917851692, 1.0640133126309357, 0.8737882670849959, 0.5930050848643684, 1.0559302837210316, 0.8806074334664248, 0.6118046363539609, 1.0266489620939327, 0.8872360866022437, 0.6080808649695553, 1.0508461506271225, 0.8924922480445022, 0.6237008052911651, 1.0605869639938756, 0.8830042460188737, 0.6292874578724683, 1.0574750559995951, 0.8917801240809651, 0.6066248682219239, 1.0546496954089368, 0.9015798217552132, 0.6042447063213557, 1.0751412125740545, 0.8750259449340263, 0.6030602378383042, 1.0404400030436871, 0.8656205920508815, 0.6098570043087803, 1.0286649865853574, 0.8801837560581343, 0.621008153382952, 1.048053365489569, 0.9165657695071804, 0.6226526626463034, 1.0757803514976891, 0.8973420860177532, 0.6105505447997439, 1.0749649221632531, 0.8676551483915848, 0.6129106587402864, 1.02809027139569, 0.8636995237914634, 0.5911918903848264, 1.029422533489872, 0.8481861440722658, 0.5948864734850994, 1.0134474888428608, 0.9149658442131796, 0.6169143377779005, 1.0721646872463084, 0.9411476978217472, 0.6886849091632661, 1.0505657314206762, 1.078579226041328, 1.0417029175076338, 1.0762371521624008, 1.0469969351619817, 1.0073476518374187, 1.0460371090011484, 0.9818751281994896, 0.9837333603078084, 0.997037508574073, 1.0725668237868988, 1.011778433470629, 1.1013710394509753, 1.0436597436849293, 1.007210362674625, 1.0580604636435138, 1.0149110339852148, 0.9958469084546115, 1.0217015958206832, 1.0283119290653953, ...]
+E   [right]: [0.8717055658066908, 0.6109362709630984, 1.0233268277117018, 0.8536353695188338, 0.6173421996848365, 0.9975238617589026, 0.8945360003193161, 0.6115117815496343, 1.0692718362860123, 0.8716753253719253, 0.6095424693392445, 1.040357739689856, 0.9017870742055538, 0.6243315534901458, 1.0517388582125848, 0.9246191733858696, 0.6415021368570983, 1.0799094596698011, 0.9081583474916374, 0.6245130827374723, 1.060757629580705, 0.8592902189004068, 0.6164835104450339, 1.003581307591261, 0.9083489913229238, 0.6205632643146095, 1.0693275973681071, 0.8949896797817352, 0.6114553528448814, 1.0640140907129876, 0.87378839290398, 0.5930052410922658, 1.05593105590272, 0.8806075600101966, 0.6118047975766538, 1.0266497128782983, 0.8872362146481311, 0.6080810251274211, 1.050846919077072, 0.8924923767661035, 0.6237009695826163, 1.0604862964644126, 0.8830043731078454, 0.6292876236884871, 1.0574758293301456, 0.891780252655562, 0.606625028024114, 1.054650466654125, 0.9015799517313922, 0.6042448654987197, 1.0751419988053263, 0.875026071197771, 0.6030603966796624, 1.040440763887256, 0.8656207169709524, 0.609857164934276, 1.0286657388143825, 0.8801838830668637, 0.6210083169467928, 1.0480541318968437, 0.9165659017732894, 0.6226528266424719, 1.075781138180658, 0.8973422155213044, 0.610550705607774, 1.0749657082501798, 0.8676552736101175, 0.6129108201698823, 1.02809102320463, 0.8636996484355728, 0.591192046094179, 1.0294232862728845, 0.8481862664669183, 0.5948866301685389, 1.0134482299439134, 0.9149659762593514, 0.61691450026333, 1.0721654712864916, 0.9411478336322152, 0.688685090551539, 1.0505664996650632, 1.0785793816790767, 1.0417031918757451, 1.07623793917954, 1.0469970862569655, 1.0073479171592463, 1.0460378739359206, 0.9818752697722036, 0.9837336194303272, 0.9970382376793316, 1.072566978579355, 1.0117786999550276, 1.1013718448479548, 1.04365989426264, 1.0072106279616486, 1.058061237369215, 1.0149111801004995, 0.9958471708172104, 1.0217023429728194, 1.0283120774437609, ...]
+E   At positional index 41, first diff: 1.0605869639938756 != 1.0604862964644126
+
+pandas/_libs/testing.pyx:173: AssertionError
+----------------------------- Captured stdout call -----------------------------
+    #CHR     START       END  SAMPLE  ...  CHR        GC  UNCORR_RD    GCCORR
+0  chr22  17900174  17921308  Tumor1  ...   22  0.414025   0.913322  1.082451
+1  chr22  17900174  17921308  Tumor2  ...   22  0.414025   0.661082  1.095292
+2  chr22  17900174  17921308  Tumor3  ...   22  0.414025   1.053985  1.072804
+3  chr22  17921309  17942571  Tumor1  ...   22  0.434484   0.894885  1.083051
+4  chr22  17921309  17942571  Tumor2  ...   22  0.434484   0.668266  1.095706
+5  chr22  17921309  17942571  Tumor3  ...   22  0.434484   1.027625  1.073030
+6  chr22  17942572  17966996  Tumor1  ...   22  0.438094   0.937902  1.083213
+7  chr22  17942572  17966996  Tumor2  ...   22  0.438094   0.662036  1.095840
+8  chr22  17942572  17966996  Tumor3  ...   22  0.438094   1.101597  1.073087
+9  chr22  17966997  17993515  Tumor1  ...   22  0.427936   0.913585  1.082801
+
+[10 rows x 18 columns]
+----------------------------- Captured stderr call -----------------------------
+[1m[95m[2026-Oct-19 22:12:05]# Parsing and checking input arguments
+[0m[92mIdentified 1 chromosomes.
+[0m[92m
+	baffile: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/vw/baf/bulk.1bed
+	outfile: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw/bb/bulk_yesphase.bb
+	referencefasta: /data1/shahs3/users/myersm2/repos/hatchet/reference/hg19.fa
+	sample_names: ['Normal', 'Tumor1', 'Tumor2', 'Tumor3']
+	min_snp_reads: 5000
+	min_total_reads: 5000
+	use_chr: True
+	processes: 1
+	chromosomes: ['chr22']
+	array: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/vw/rdr
+	totalcounts: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/vw/rdr/total.tsv
+	phase: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/vw/phase/phased.vcf.gz
+	blocksize: 25000
+	max_snps_per_block: 10
+	test_alpha: 0.1
+	multisample: True
+	ref_version: hg19
+[0m[92mLoading intermediate files for chromosome chr22
+[0m[92mBinning p arm of chromosome chr22
+[0m[92mNo SNPs found in p arm for chr22
+[0m[92mBinning q arm of chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:17:18]Correcting haplotype switches on q arm...
+[0m[92mFound haplotype switches in  0.00% of bins
+[0m[92mInsufficient haplotype switching detected (<[0.01]), skipping correction.
+[0m[92mDone chromosome chr22
+[0m[1m[95m[2026-Oct-19 22:17:18]# Merging per-chromosome bb files and correcting read counts
+[0m[1m[95m[2026-Oct-19 22:17:18]# Performing GC bias correction on read depth signal
+[0m[1m[95m[2026-Oct-19 22:17:19]# Done
+[0m
+=============================== warnings summary ===============================
+tests/test_steps_vw.py::test_combine_counts
+tests/test_steps_vw.py::test_combine_counts_phasing
+  /data1/shahs3/users/myersm2/repos/hatchet/src/hatchet/utils/rd_gccorrect.py:27: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
+    gccorrect = bb.groupby('SAMPLE').apply(lambda D: smf.quantreg('RD ~ GC + I(GC ** 2.0)', data=D).fit(q=0.5))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_steps_vw.py::test_combine_counts - AssertionError: DataFram...
+FAILED tests/test_steps_vw.py::test_combine_counts_phasing - AssertionError: ...
+2 failed, 2 warnings in 348.68s (0:05:48)
+=== stage: cluster
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________________________ test_cluster_bins_gmm _____________________________
+
+output_folder = '/data1/shahs3/users/myersm2/repos/hatchet/tests/out'
+
+    def test_cluster_bins_gmm(output_folder):
+        cluster_bins_gmm(
+            args=[
+                f'{this_dir}/data/fw/bb/bulk.bb',
+                '-o',
+                f'{output_folder}/bbc/bulk.seg',
+                '-O',
+                f'{output_folder}/bbc/bulk.bbc',
+                '-e',
+                '22171',  # random seed
+                '-tB',
+                '0.04',
+                '-tR',
+                '0.15',
+                '-d',
+                '0.4',
+                '-K',
+                '20',
+            ]
+        )
+
+        df1 = pd.read_csv(f'{output_folder}/bbc/bulk.seg', sep='\t')
+        df2 = pd.read_csv(f'{this_dir}/data/fw/bbc/bulk.seg', sep='\t')
+>       assert_frame_equal(df1, df2)
+
+tests/test_steps.py:255:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+pandas/_libs/testing.pyx:55: in pandas._libs.testing.assert_almost_equal
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+>   ???
+E   AssertionError: DataFrame.iloc[:, 3] (column name="RD") are different
+E
+E   DataFrame.iloc[:, 3] (column name="RD") values are different (50.0 %)
+E   [index]: [0, 1, 2, 3, 4, 5]
+E   [left]:  [0.9633385878734092, 0.9730070275908782, 0.9529624110114376, 0.7210487261934208, 0.7385604748948801, 0.7038832550086569]
+E   [right]: [0.9633385878734092, 0.973007027590878, 0.9529624110114382, 0.7213455354934455, 0.738807815978234, 0.70408112787534]
+E   At positional index 3, first diff: 0.7210487261934208 != 0.7213455354934455
+
+pandas/_libs/testing.pyx:173: AssertionError
+----------------------------- Captured stderr call -----------------------------
+[1m[95m[2026-Oct-19 22:17:21]# Parsing and checking input arguments
+[0m[92m
+	bbfile: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bb/bulk.bb
+	cloud: 0
+	diploidbaf: 0.4
+	rdtol: 0.15
+	baftol: 0.04
+	ratiodeviation: 0.02
+	bafdeviation: 0.02
+	seed: 22171
+	initclusters: 20
+	concentration: 0.02
+	restarts: 10
+	verbose: False
+	disable: False
+	outsegments: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/bbc/bulk.seg
+	outbins: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/bbc/bulk.bbc
+[0m[1m[95m[2026-Oct-19 22:17:21]# Reading the combined BB file
+[0m[1m[95m[2026-Oct-19 22:17:21]# Format data to cluster
+[0m[1m[95m[2026-Oct-19 22:17:21]# Clustering bins by RD and BAF across tumor samples
+[0m[92m## Clustering with K=20 and c=0.02...
+[0m[1m[95m[2026-Oct-19 22:17:22]# Refining clustering using given tolerances
+[0m[92mThe number of clusters have been reduced from 2 to 2 with given tolerances
+[0m[1m[95m[2026-Oct-19 22:17:22]# Writing BBC output with resulting clusters
+[0m[1m[95m[2026-Oct-19 22:17:22]# Segmenting bins
+[0m[1m[95m[2026-Oct-19 22:17:22]# Determining the largest cluster as diploid or tetraploid and rescaling all the clusters inside the threshold accordingly
+[0m[1m[95m[2026-Oct-19 22:17:22]# Writing REF output with resulting segments
+[0m
+=============================== warnings summary ===============================
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:64
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:64: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+    prop = Group((name + Suppress("=") + comma_separated(value)) | oneOf(_CONSTANTS))
+
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:45
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_steps.py::test_cluster_bins_gmm - AssertionError: DataFrame...
+1 failed, 14 warnings in 3.44s
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+______________________________ test_cluster_bins _______________________________
+
+output_folder = '/data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw'
+
+    def test_cluster_bins(output_folder):
+        cluster_bins(
+            args=[
+                f'{this_dir}/data/fw/bb/bulk.bb',
+                '-o',
+                f'{output_folder}/bbc/bulk.seg',
+                '-O',
+                f'{output_folder}/bbc/bulk.bbc',
+                '--transmat',
+                'diag',
+                '--covar',
+                'diag',
+                '--minK',
+                '2',
+                '--maxK',
+                '10',
+            ]
+        )
+
+        seg1 = pd.read_csv(os.path.join(output_folder, 'bbc', 'bulk.seg'), sep='\t')
+        bbc1 = pd.read_csv(os.path.join(output_folder, 'bbc', 'bulk.bbc'), sep='\t')
+
+        seg2 = pd.read_csv(os.path.join(this_dir, 'data', 'vw', 'bbc', 'bulk.seg'), sep='\t')
+        bbc2 = pd.read_csv(os.path.join(this_dir, 'data', 'vw', 'bbc', 'bulk.bbc'), sep='\t')
+>       assert_frame_equal(seg1, seg2)
+
+tests/test_steps_vw.py:167:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+pandas/_libs/testing.pyx:55: in pandas._libs.testing.assert_almost_equal
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+>   ???
+E   AssertionError: DataFrame.iloc[:, 3] (column name="RD") are different
+E
+E   DataFrame.iloc[:, 3] (column name="RD") values are different (50.0 %)
+E   [index]: [0, 1, 2, 3, 4, 5]
+E   [left]:  [0.9633385878734092, 0.973007027590878, 0.952962411011438, 0.7210487261934208, 0.7385604748948801, 0.7038832550086569]
+E   [right]: [0.9633385878734092, 0.973007027590878, 0.952962411011438, 0.7213455354934455, 0.738807815978234, 0.70408112787534]
+E   At positional index 3, first diff: 0.7210487261934208 != 0.7213455354934455
+
+pandas/_libs/testing.pyx:173: AssertionError
+----------------------------- Captured stderr call -----------------------------
+[1m[95m[2026-Oct-19 22:17:25]# Parsing and checking input arguments
+[0m[92m
+	bbfile: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bb/bulk.bb
+	diploidbaf: 0.06
+	decoding: map
+	selection: bic
+	minK: 2
+	maxK: 10
+	exactK: 0
+	covar: diag
+	transmat: diag
+	tau: 1e-06
+	outsegments: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw/bbc/bulk.seg
+	outbins: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw/bbc/bulk.bbc
+	restarts: 10
+	subset: None
+	allow_gaps: False
+[0m[1m[95m[2026-Oct-19 22:17:25]# Reading the combined BB file
+[0m[1m[95m[2026-Oct-19 22:17:25]# Clustering bins by RD and BAF across tumor samples using locality
+[0m[1m[95m[2026-Oct-19 22:17:26]# Checking consistency of results
+[0m[1m[95m[2026-Oct-19 22:17:26]# Writing output
+[0m[1m[95m[2026-Oct-19 22:17:26]# Done
+[0m
+_________________________ test_cluster_bins_singleton __________________________
+
+output_folder = '/data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw'
+
+    def test_cluster_bins_singleton(output_folder):
+        cluster_bins(
+            args=[
+                f'{this_dir}/data/fw/bb/bulk.bb',
+                '-o',
+                f'{output_folder}/bbc/bulk_onecl.seg',
+                '-O',
+                f'{output_folder}/bbc/bulk_onecl.bbc',
+                '--transmat',
+                'diag',
+                '--covar',
+                'diag',
+                '--exactK',
+                '1',
+            ]
+        )
+
+        seg1 = pd.read_csv(os.path.join(output_folder, 'bbc', 'bulk_onecl.seg'), sep='\t')
+        bbc1 = pd.read_csv(os.path.join(output_folder, 'bbc', 'bulk_onecl.bbc'), sep='\t')
+
+        seg2 = pd.read_csv(os.path.join(this_dir, 'data', 'vw', 'bbc', 'bulk_onecl.seg'), sep='\t')
+        bbc2 = pd.read_csv(os.path.join(this_dir, 'data', 'vw', 'bbc', 'bulk_onecl.bbc'), sep='\t')
+        assert_frame_equal(seg1, seg2)
+>       assert_frame_equal(bbc1, bbc2)
+
+tests/test_steps_vw.py:194:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+pandas/_libs/testing.pyx:55: in pandas._libs.testing.assert_almost_equal
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+>   ???
+E   AssertionError: DataFrame.iloc[:, 4] (column name="RD") are different
+E
+E   DataFrame.iloc[:, 4] (column name="RD") values are different (2.08333 %)
+E   [index]: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, ...]
+E   [left]:  [0.7210487261934208, 0.7385604748948801, 0.7038832550086569, 0.9698115109363976, 0.9940026207035582, 0.9615462150992844, 0.9642750966207512, 0.9724011495391932, 0.9515409771083144, 0.9401675702316412, 0.9393297190734352, 0.9360275998028584, 0.9593107951976692, 0.9787511930476716, 0.9580549555432762, 0.9605947955390336, 0.9405204460966544, 0.9586121437422552, 0.9646766169154228, 0.9852238805970148, 0.9474129353233832, 0.9746595500573652, 0.9832393874395172, 0.95605327480421, 0.9615461546154616, 0.9662466246624662, 0.9633963396339634, 0.9384151383956802, 0.9405555285304276, 0.9254755071265264, 0.943250770914155, 0.9520043768029444, 0.938078185616234, 0.9396205854673336, 0.9458616078062312, 0.9267422854029422, 0.9620656996161708, 0.9799112706245948, 0.943322865260954, 0.955409901186752, 0.942251353095983, 0.9566016187496896, 0.93750607444844, 0.9614151035086014, 0.9178248615025756, 0.9620297375511426, 0.9628779562917872, 0.9490569803412832, 0.9581731969054156, 0.9775393062141252, 0.9441976541053156, 0.9421569110902904, 0.9614872528231176, 0.946249815079639, 0.9684736447664252, 0.9626779915063702, 0.9712215838121409, 0.9617847138855542, 0.968187274909964, 0.9508303321328532, 0.9669215010243342, 0.9639734172787688, 0.958227152350972, 0.962336547685162, 0.9735951936184176, 0.9529459282071996, 0.9674708325093928, 0.9701898358710698, 0.9464603519873442, 0.9733002330529942, 0.9776066470767047, 0.964687405005573, 0.9825278430571166, 0.9895269234699092, 0.9682231531623582, 0.991358714990088, 1.0070655212728103, 0.975448584354191, 0.956002034587996, 0.968413021363174, 0.9639877924720244, 0.9748581101264564, 0.9852633675196656, 0.9511102260280792, 0.9625104274007557, 0.971441189459738, 0.9580450463712644, 0.930544593528019, 0.9591061562746646, 0.9300019731649566, 0.9574077746925824, 0.9684648948829828, 0.9390122967076556, 0.9581305254792888, 0.9578821893314792, 0.9507797755041224, 0.962439438589481, 0.9663353478847212, 0.9484541231706708, 0.9763771712158807, ...]
+E   [right]: [0.7213455354934455, 0.738807815978234, 0.70408112787534, 0.9698115109363976, 0.9940026207035582, 0.9615462150992844, 0.9642750966207512, 0.9724011495391932, 0.9515409771083144, 0.9401675702316412, 0.9393297190734352, 0.9360275998028584, 0.9593107951976692, 0.9787511930476716, 0.9580549555432762, 0.9605947955390336, 0.9405204460966544, 0.9586121437422552, 0.9646766169154228, 0.9852238805970148, 0.9474129353233832, 0.9746595500573652, 0.9832393874395172, 0.95605327480421, 0.9615461546154616, 0.9662466246624662, 0.9633963396339634, 0.9384151383956802, 0.9405555285304276, 0.9254755071265264, 0.943250770914155, 0.9520043768029444, 0.938078185616234, 0.9396205854673336, 0.9458616078062312, 0.9267422854029422, 0.9620656996161708, 0.9799112706245948, 0.943322865260954, 0.955409901186752, 0.942251353095983, 0.9566016187496896, 0.93750607444844, 0.9614151035086014, 0.9178248615025756, 0.9620297375511426, 0.9628779562917872, 0.9490569803412832, 0.9581731969054156, 0.9775393062141252, 0.9441976541053156, 0.9421569110902904, 0.9614872528231176, 0.946249815079639, 0.9684736447664252, 0.9626779915063702, 0.9712215838121409, 0.9617847138855542, 0.968187274909964, 0.9508303321328532, 0.9669215010243342, 0.9639734172787688, 0.958227152350972, 0.962336547685162, 0.9735951936184176, 0.9529459282071996, 0.9674708325093928, 0.9701898358710698, 0.9464603519873442, 0.9733002330529942, 0.9776066470767047, 0.964687405005573, 0.9825278430571166, 0.9895269234699092, 0.9682231531623582, 0.991358714990088, 1.0070655212728103, 0.975448584354191, 0.956002034587996, 0.968413021363174, 0.9639877924720244, 0.9748581101264564, 0.9852633675196656, 0.9511102260280792, 0.9625104274007557, 0.971441189459738, 0.9580450463712644, 0.930544593528019, 0.9591061562746646, 0.9300019731649566, 0.9574077746925824, 0.9684648948829828, 0.9390122967076556, 0.9581305254792888, 0.9578821893314792, 0.9507797755041224, 0.962439438589481, 0.9663353478847212, 0.9484541231706708, 0.9763771712158807, ...]
+E   At positional index 0, first diff: 0.7210487261934208 != 0.7213455354934455
+
+pandas/_libs/testing.pyx:173: AssertionError
+----------------------------- Captured stderr call -----------------------------
+[1m[95m[2026-Oct-19 22:17:26]# Parsing and checking input arguments
+[0m[93mWARNING: using fixed K (K=1) will bypass model selection.
+[0m[92m
+	bbfile: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bb/bulk.bb
+	diploidbaf: 0.06
+	decoding: map
+	selection: bic
+	minK: 5
+	maxK: 30
+	exactK: 1
+	covar: diag
+	transmat: diag
+	tau: 1e-06
+	outsegments: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw/bbc/bulk_onecl.seg
+	outbins: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/vw/bbc/bulk_onecl.bbc
+	restarts: 10
+	subset: None
+	allow_gaps: False
+[0m[1m[95m[2026-Oct-19 22:17:26]# Reading the combined BB file
+[0m[1m[95m[2026-Oct-19 22:17:26]# Found exactK=1, returning trivial clustering.
+[0m[1m[95m[2026-Oct-19 22:17:26]# Checking consistency of results
+[0m[1m[95m[2026-Oct-19 22:17:26]# Writing output
+[0m[1m[95m[2026-Oct-19 22:17:26]# Done
+[0m
+=========================== short test summary info ============================
+FAILED tests/test_steps_vw.py::test_cluster_bins - AssertionError: DataFrame....
+FAILED tests/test_steps_vw.py::test_cluster_bins_singleton - AssertionError: ...
+2 failed in 2.83s
+=== stage: solve
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________________________ test_compute_cn ________________________________
+
+output_folder = '/data1/shahs3/users/myersm2/repos/hatchet/tests/out'
+
+    def test_compute_cn(output_folder):
+        if solver_available():
+            main(
+                args=[
+                    '-x',
+                    f'{output_folder}/results',
+                    '-i',
+                    f'{this_dir}/data/fw/bbc/bulk',
+                    '-n2',
+                    '-p',
+                    '100',
+                    '-v',
+                    '3',
+                    '-u',
+                    '0.03',
+                    '-r',
+                    '6700',  # random seed
+                    '-j',
+                    '8',
+                    '-eD',
+                    '6',
+                    '-eT',
+                    '12',
+                    '-g',
+                    '0.35',
+                    '-l',
+                    '0.6',
+                ]
+            )
+
+            df1 = pd.read_csv(f'{output_folder}/results/best.bbc.ucn', sep='\t')
+            df2 = pd.read_csv(f'{this_dir}/data/fw/results/best.bbc.ucn', sep='\t')
+>           assert_frame_equal(df1, df2)
+
+tests/test_steps.py:301:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+pandas/_libs/testing.pyx:55: in pandas._libs.testing.assert_almost_equal
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+>   ???
+E   AssertionError: DataFrame.iloc[:, 4] (column name="RD") are different
+E
+E   DataFrame.iloc[:, 4] (column name="RD") values are different (2.08333 %)
+E   [index]: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, ...]
+E   [left]:  [0.721049, 0.73856, 0.703883, 0.969812, 0.994003, 0.961546, 0.964275, 0.972401, 0.951541, 0.940168, 0.93933, 0.936028, 0.959311, 0.978751, 0.958055, 0.960595, 0.94052, 0.958612, 0.964677, 0.985224, 0.947413, 0.97466, 0.983239, 0.956053, 0.961546, 0.966247, 0.963396, 0.938415, 0.940556, 0.925476, 0.943251, 0.952004, 0.938078, 0.939621, 0.945862, 0.926742, 0.962066, 0.979911, 0.943323, 0.95541, 0.942251, 0.956602, 0.937506, 0.961415, 0.917825, 0.96203, 0.962878, 0.949057, 0.958173, 0.977539, 0.944198, 0.942157, 0.961487, 0.94625, 0.968474, 0.962678, 0.971222, 0.961785, 0.968187, 0.95083, 0.966922, 0.963973, 0.958227, 0.962337, 0.973595, 0.952946, 0.967471, 0.97019, 0.94646, 0.9733, 0.977607, 0.964687, 0.982528, 0.989527, 0.968223, 0.991359, 1.00707, 0.975449, 0.956002, 0.968413, 0.963988, 0.974858, 0.985263, 0.95111, 0.96251, 0.971441, 0.958045, 0.930545, 0.959106, 0.930002, 0.957408, 0.968465, 0.939012, 0.958131, 0.957882, 0.95078, 0.962439, 0.966335, 0.948454, 0.976377, ...]
+E   [right]: [0.721346, 0.738808, 0.7040810000000001, 0.969812, 0.994003, 0.961546, 0.964275, 0.972401, 0.951541, 0.940168, 0.93933, 0.936028, 0.959311, 0.978751, 0.958055, 0.960595, 0.94052, 0.958612, 0.964677, 0.985224, 0.947413, 0.97466, 0.983239, 0.956053, 0.961546, 0.966247, 0.963396, 0.938415, 0.940556, 0.925476, 0.943251, 0.952004, 0.938078, 0.939621, 0.945862, 0.926742, 0.962066, 0.979911, 0.943323, 0.95541, 0.942251, 0.956602, 0.937506, 0.961415, 0.917825, 0.96203, 0.962878, 0.949057, 0.958173, 0.977539, 0.944198, 0.942157, 0.961487, 0.94625, 0.968474, 0.962678, 0.971222, 0.961785, 0.968187, 0.95083, 0.966922, 0.963973, 0.958227, 0.962337, 0.973595, 0.952946, 0.967471, 0.97019, 0.94646, 0.9733, 0.977607, 0.964687, 0.982528, 0.989527, 0.968223, 0.991359, 1.00707, 0.975449, 0.956002, 0.968413, 0.963988, 0.974858, 0.985263, 0.95111, 0.96251, 0.971441, 0.958045, 0.930545, 0.959106, 0.930002, 0.957408, 0.968465, 0.939012, 0.958131, 0.957882, 0.95078, 0.962439, 0.966335, 0.948454, 0.976377, ...]
+E   At positional index 0, first diff: 0.721049 != 0.721346
+
+pandas/_libs/testing.pyx:173: AssertionError
+----------------------------- Captured stdout call -----------------------------
+[96m## solver:	/data1/shahs3/users/myersm2/repos/hatchet/src/hatchet/solve
+## input:	/data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bbc/bulk
+## seg:	/data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bbc/bulk.seg
+## bbc:	/data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bbc/bulk.bbc
+## ln:	2
+## un:	2
+## fixedmatrix:	None
+## clonal:	None
+## sampleclonal:	None
+## sampleclonalfile:	None
+## ampdel:	True
+## d:	None
+## max_homdel_size:	0.005
+## eD:	6
+## eT:	12
+## ts:	0.008
+## tc:	1
+## td:	0.01
+## tR:	0.08
+## tB:	0.04
+## mR:	0
+## mB:	0
+## limit:	0.6
+## g:	0.35
+## p:	100
+## j:	8
+## r:	6700
+## s:	None
+## m:	None
+## u:	0.03
+## f:	None
+## M:	2
+## x:	/data1/shahs3/users/myersm2/repos/hatchet/tests/out/results
+## diploid:	False
+## tetraploid:	False
+## v:	3
+## binwise:	False
+## purities:	None
+[0m
+----------------------------- Captured stderr call -----------------------------
+# Checking and parsing input arguments
+# Checking and parsing input arguments
+
+	solver: /data1/shahs3/users/myersm2/repos/hatchet/src/hatchet/solve
+	input: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bbc/bulk
+	seg: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bbc/bulk.seg
+	bbc: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bbc/bulk.bbc
+	ln: 2
+	un: 2
+	fixedmatrix: None
+	clonal: None
+	sampleclonal: None
+	sampleclonalfile: None
+	ampdel: True
+	d: None
+	max_homdel_size: 0.005
+	eD: 6
+	eT: 12
+	ts: 0.008
+	tc: 1
+	td: 0.01
+	tR: 0.08
+	tB: 0.04
+	mR: 0
+	mB: 0
+	limit: 0.6
+	g: 0.35
+	p: 100
+	j: 8
+	r: 6700
+	s: None
+	m: None
+	u: 0.03
+	f: None
+	M: 2
+	x: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/results
+	diploid: False
+	tetraploid: False
+	v: 3
+	binwise: False
+	purities: None
+
+	solver: /data1/shahs3/users/myersm2/repos/hatchet/src/hatchet/solve
+	input: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bbc/bulk
+	seg: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bbc/bulk.seg
+	bbc: /data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bbc/bulk.bbc
+	ln: 2
+	un: 2
+	fixedmatrix: None
+	clonal: None
+	sampleclonal: None
+	sampleclonalfile: None
+	ampdel: True
+	d: None
+	max_homdel_size: 0.005
+	eD: 6
+	eT: 12
+	ts: 0.008
+	tc: 1
+	td: 0.01
+	tR: 0.08
+	tB: 0.04
+	mR: 0
+	mB: 0
+	limit: 0.6
+	g: 0.35
+	p: 100
+	j: 8
+	r: 6700
+	s: None
+	m: None
+	u: 0.03
+	f: None
+	M: 2
+	x: /data1/shahs3/users/myersm2/repos/hatchet/tests/out/results
+	diploid: False
+	tetraploid: False
+	v: 3
+	binwise: False
+	purities: None
+# Reading and parsing clustered bins in BBC file
+# Reading and parsing clustered bins in BBC file
+# Reading and parsing bin clusters in SEG file
+# Reading and parsing bin clusters in SEG file
+# Computing the cluster sizes
+# Computing the cluster sizes
+# Filtering clusters based on covered genome size and covered chromosomes
+# Filtering clusters based on covered genome size and covered chromosomes
+[92m### Clusters and their features:
+[0m[92m### 1: SIZE= 2315392.0	#CHRS= 1	(RDR, BAF)= (0.9529624110114377, 0.5)-(0.9633385878734092, 0.5)-(0.9730070275908782, 0.5)
+[0m[92m### 2: SIZE= 50000.0	#CHRS= 1	(RDR, BAF)= (0.7038832550086569, 0.35331019452438617)-(0.7210487261934208, 0.3561762437057316)-(0.7385604748948801, 0.38707893705754226)
+[0m[96m# Selected clusters: 1, 2
+[0m[96m## Features of selected clusters:
+[0m[96m## 1: SIZE= 2315392.0	#CHRS= 1	(RDR, BAF)= (0.9529624110114377, 0.5)-(0.9633385878734092, 0.5)-(0.9730070275908782, 0.5)
+## 2: SIZE= 50000.0	#CHRS= 1	(RDR, BAF)= (0.7038832550086569, 0.35331019452438617)-(0.7210487261934208, 0.3561762437057316)-(0.7385604748948801, 0.38707893705754226)
+[0m## Neither "diploid" nor "tetraploid" was fixed. Model selection will be performed and the "clonal" argumentwill not be used for scaling.
+## Neither "diploid" nor "tetraploid" was fixed. Model selection will be performed and the "clonal" argumentwill not be used for scaling.
+# Finding the neutral diploid/tetraploid cluster
+# Finding the neutral diploid/tetraploid cluster
+[96m## Cluster selected as neutral (diploid/tetraploid) is 1
+[0m# Running diploid
+# Running diploid
+## Running diploid with 2 clones
+## Running diploid with 2 clones
+[92m### Running command: /data1/shahs3/users/myersm2/repos/hatchet/src/hatchet/solve /data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bbc/bulk -f  -e 6 -j 8 -p 100 -u 0.03 --max-homdel-size 0.005 -r 6700 -M 2 -v 2 -c 1:1:1 -n 2 -o /data1/shahs3/users/myersm2/repos/hatchet/tests/out/results/results.diploid.n2
+[0m[2KProgress: |--------------------------------------------------| 1.0% Complete [Obj value 0.313355][2KProgress: |█-------------------------------------------------| 2.0% Complete [Obj value 0.313355][2KProgress: |█-------------------------------------------------| 3.0% Complete [Obj value 0.313355][2KProgress: |██------------------------------------------------| 4.0% Complete [Obj value 0.313355][2KProgress: |██------------------------------------------------| 5.0% Complete [Obj value 0.313355][2KProgress: |███-----------------------------------------------| 6.0% Complete [Obj value 0.313355][2KProgress: |███-----------------------------------------------| 7.0% Complete [Obj value 0.313355][2KProgress: |████----------------------------------------------| 8.0% Complete [Obj value 0.313355][2KProgress: |████----------------------------------------------| 9.0% Complete [Obj value 3.140978][2KProgress: |█████---------------------------------------------| 10.0% Complete [Obj value 3.140978][2KProgress: |█████---------------------------------------------| 11.0% Complete [Obj value 0.313355][2KProgress: |██████--------------------------------------------| 12.0% Complete [Obj value 0.313355][2KProgress: |██████--------------------------------------------| 13.0% Complete [Obj value 0.313355][2KProgress: |███████-------------------------------------------| 14.0% Complete [Obj value 0.313355][2KProgress: |███████-------------------------------------------| 15.0% Complete [Obj value 0.313355][2KProgress: |████████------------------------------------------| 16.0% Complete [Obj value 0.313355][2KProgress: |████████------------------------------------------| 17.0% Complete [Obj value 0.313355][2KProgress: |█████████-----------------------------------------| 18.0% Complete [Obj value 0.313355][2KProgress: |█████████-----------------------------------------| 19.0% Complete [Obj value 0.313355][2KProgress: |██████████----------------------------------------| 20.0% Complete [Obj value 0.313355][2KProgress: |██████████----------------------------------------| 21.0% Complete [Obj value 0.313355][2KProgress: |███████████---------------------------------------| 22.0% Complete [Obj value 0.313355][2KProgress: |███████████---------------------------------------| 23.0% Complete [Obj value 0.313355][2KProgress: |████████████--------------------------------------| 24.0% Complete [Obj value 0.313355][2KProgress: |████████████--------------------------------------| 25.0% Complete [Obj value 0.313355][2KProgress: |█████████████-------------------------------------| 26.0% Complete [Obj value 0.313355][2KProgress: |█████████████-------------------------------------| 27.0% Complete [Obj value 0.313355][2KProgress: |██████████████------------------------------------| 28.0% Complete [Obj value 0.313355][2KProgress: |██████████████------------------------------------| 29.0% Complete [Obj value 0.313355][2KProgress: |███████████████-----------------------------------| 30.0% Complete [Obj value 0.313355][2KProgress: |███████████████-----------------------------------| 31.0% Complete [Obj value 0.313355][2KProgress: |████████████████----------------------------------| 32.0% Complete [Obj value 0.313355][2KProgress: |████████████████----------------------------------| 33.0% Complete [Obj value 0.313355][2KProgress: |█████████████████---------------------------------| 34.0% Complete [Obj value 0.313355][2KProgress: |█████████████████---------------------------------| 35.0% Complete [Obj value 0.313355][2KProgress: |██████████████████--------------------------------| 36.0% Complete [Obj value 0.313355][2KProgress: |██████████████████--------------------------------| 37.0% Complete [Obj value 0.313355][2KProgress: |███████████████████-------------------------------| 38.0% Complete [Obj value 0.313355][2KProgress: |███████████████████-------------------------------| 39.0% Complete [Obj value 0.313355][2KProgress: |████████████████████------------------------------| 40.0% Complete [Obj value 0.313355][2KProgress: |████████████████████------------------------------| 41.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████-----------------------------| 42.0% Complete [Obj value 3.140978][2KProgress: |█████████████████████-----------------------------| 43.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████----------------------------| 44.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████----------------------------| 45.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████---------------------------| 46.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████---------------------------| 47.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████--------------------------| 48.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████--------------------------| 49.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████-------------------------| 50.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████-------------------------| 51.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████████------------------------| 52.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████████------------------------| 53.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████████-----------------------| 54.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████████-----------------------| 55.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████████----------------------| 56.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████████----------------------| 57.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████████---------------------| 58.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████████---------------------| 59.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████████████--------------------| 60.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████████████--------------------| 61.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████████████-------------------| 62.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████████████-------------------| 63.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████████████------------------| 64.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████████████------------------| 65.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████████████-----------------| 66.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████████████-----------------| 67.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████████████████----------------| 68.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████████████████----------------| 69.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████████████████---------------| 70.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████████████████---------------| 71.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████████████████--------------| 72.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████████████████--------------| 73.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████████████████-------------| 74.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████████████████-------------| 75.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████████████████████------------| 76.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████████████████████------------| 77.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████████████████████-----------| 78.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████████████████████-----------| 79.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████████████████████----------| 80.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████████████████████----------| 81.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████████████████████---------| 82.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████████████████████---------| 83.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████████████████████████--------| 84.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████████████████████████--------| 85.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████████████████████████-------| 86.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████████████████████████-------| 87.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████████████████████████------| 88.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████████████████████████------| 89.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████████████████████████-----| 90.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████████████████████████-----| 91.0% Complete [Obj value 3.140978][2KProgress: |██████████████████████████████████████████████----| 92.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████████████████████████████----| 93.0% Complete [Obj value 0.313355][2KProgress: |███████████████████████████████████████████████---| 94.0% Complete [Obj value 3.140978][2KProgress: |███████████████████████████████████████████████---| 95.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████████████████████████████--| 96.0% Complete [Obj value 0.313355][2KProgress: |████████████████████████████████████████████████--| 97.0% Complete [Obj value 3.140978][2KProgress: |█████████████████████████████████████████████████-| 98.0% Complete [Obj value 0.313355][2KProgress: |█████████████████████████████████████████████████-| 99.0% Complete [Obj value 0.313355][2KProgress: |██████████████████████████████████████████████████| 100.0% Complete [Obj value 0.313355]
+[96m# Best objective found with 2 clones: 0.313355
+[0m# Finding clonal clusters and their copy numbers
+# Finding clonal clusters and their copy numbers
+[92m### Potential clonal cluster 2 with copy numbers [(2, 0)]
+[0m[96m## Found pattern of size 2365392.0: {'1': (2, 2), '2': (2, 0)}
+[0m[96m## Chosen pattern of size 2365392.0: {'1': (2, 2), '2': (2, 0)}
+[0m# Running tetraploid
+# Running tetraploid
+## Running tetraploid with 2 clones
+## Running tetraploid with 2 clones
+[92m### Running command: /data1/shahs3/users/myersm2/repos/hatchet/src/hatchet/solve /data1/shahs3/users/myersm2/repos/hatchet/tests/data/fw/bbc/bulk -f  -e 12 -j 8 -p 100 -u 0.03 --max-homdel-size 0.005 -r 6700 -M 2 -v 2 -c 1:2:2,2:2:0 -n 2 -o /data1/shahs3/users/myersm2/repos/hatchet/tests/out/results/results.tetraploid.n2
+[0m[2KProgress: |--------------------------------------------------| 1.0% Complete [Obj value 0.835235][2KProgress: |█-------------------------------------------------| 2.0% Complete [Obj value 0.835235][2KProgress: |█-------------------------------------------------| 3.0% Complete [Obj value 0.835235][2KProgress: |██------------------------------------------------| 4.0% Complete [Obj value 0.835235][2KProgress: |██------------------------------------------------| 5.0% Complete [Obj value 0.835235][2KProgress: |███-----------------------------------------------| 6.0% Complete [Obj value 0.835235][2KProgress: |███-----------------------------------------------| 7.0% Complete [Obj value 0.835235][2KProgress: |████----------------------------------------------| 8.0% Complete [Obj value 0.835235][2KProgress: |████----------------------------------------------| 9.0% Complete [Obj value 0.835235][2KProgress: |█████---------------------------------------------| 10.0% Complete [Obj value 0.835235][2KProgress: |█████---------------------------------------------| 11.0% Complete [Obj value 0.835235][2KProgress: |██████--------------------------------------------| 12.0% Complete [Obj value 0.835235][2KProgress: |██████--------------------------------------------| 13.0% Complete [Obj value 0.835235][2KProgress: |███████-------------------------------------------| 14.0% Complete [Obj value 0.835235][2KProgress: |███████-------------------------------------------| 15.0% Complete [Obj value 0.835235][2KProgress: |████████------------------------------------------| 16.0% Complete [Obj value 0.835235][2KProgress: |████████------------------------------------------| 17.0% Complete [Obj value 0.835235][2KProgress: |█████████-----------------------------------------| 18.0% Complete [Obj value 0.835235][2KProgress: |█████████-----------------------------------------| 19.0% Complete [Obj value 0.835235][2KProgress: |██████████----------------------------------------| 20.0% Complete [Obj value 0.835235][2KProgress: |██████████----------------------------------------| 21.0% Complete [Obj value 0.835235][2KProgress: |███████████---------------------------------------| 22.0% Complete [Obj value 0.835235][2KProgress: |███████████---------------------------------------| 23.0% Complete [Obj value 0.835235][2KProgress: |████████████--------------------------------------| 24.0% Complete [Obj value 0.835235][2KProgress: |████████████--------------------------------------| 25.0% Complete [Obj value 0.835235][2KProgress: |█████████████-------------------------------------| 26.0% Complete [Obj value 0.835235][2KProgress: |█████████████-------------------------------------| 27.0% Complete [Obj value 0.835235][2KProgress: |██████████████------------------------------------| 28.0% Complete [Obj value 0.835235][2KProgress: |██████████████------------------------------------| 29.0% Complete [Obj value 0.835235][2KProgress: |███████████████-----------------------------------| 30.0% Complete [Obj value 0.835235][2KProgress: |███████████████-----------------------------------| 31.0% Complete [Obj value 0.835235][2KProgress: |████████████████----------------------------------| 32.0% Complete [Obj value 0.835235][2KProgress: |████████████████----------------------------------| 33.0% Complete [Obj value 0.835235][2KProgress: |█████████████████---------------------------------| 34.0% Complete [Obj value 0.835235][2KProgress: |█████████████████---------------------------------| 35.0% Complete [Obj value 0.835235][2KProgress: |██████████████████--------------------------------| 36.0% Complete [Obj value 0.835235][2KProgress: |██████████████████--------------------------------| 37.0% Complete [Obj value 0.835235][2KProgress: |███████████████████-------------------------------| 38.0% Complete [Obj value 0.835235][2KProgress: |███████████████████-------------------------------| 39.0% Complete [Obj value 0.835235][2KProgress: |████████████████████------------------------------| 40.0% Complete [Obj value 0.835235][2KProgress: |████████████████████------------------------------| 41.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████-----------------------------| 42.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████-----------------------------| 43.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████----------------------------| 44.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████----------------------------| 45.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████---------------------------| 46.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████---------------------------| 47.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████--------------------------| 48.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████--------------------------| 49.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████-------------------------| 50.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████-------------------------| 51.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████------------------------| 52.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████------------------------| 53.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████████-----------------------| 54.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████████-----------------------| 55.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████████----------------------| 56.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████████----------------------| 57.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████████---------------------| 58.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████████---------------------| 59.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████████--------------------| 60.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████████--------------------| 61.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████████████-------------------| 62.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████████████-------------------| 63.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████████████------------------| 64.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████████████------------------| 65.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████████████-----------------| 66.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████████████-----------------| 67.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████████████----------------| 68.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████████████----------------| 69.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████████████████---------------| 70.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████████████████---------------| 71.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████████████████--------------| 72.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████████████████--------------| 73.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████████████████-------------| 74.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████████████████-------------| 75.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████████████████------------| 76.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████████████████------------| 77.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████████████████████-----------| 78.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████████████████████-----------| 79.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████████████████████----------| 80.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████████████████████----------| 81.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████████████████████---------| 82.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████████████████████---------| 83.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████████████████████--------| 84.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████████████████████--------| 85.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████████████████████████-------| 86.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████████████████████████-------| 87.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████████████████████████------| 88.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████████████████████████------| 89.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████████████████████████-----| 90.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████████████████████████-----| 91.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████████████████████████----| 92.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████████████████████████----| 93.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████████████████████████████---| 94.0% Complete [Obj value 0.835235][2KProgress: |███████████████████████████████████████████████---| 95.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████████████████████████████--| 96.0% Complete [Obj value 0.835235][2KProgress: |████████████████████████████████████████████████--| 97.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████████████████████████████-| 98.0% Complete [Obj value 0.835235][2KProgress: |█████████████████████████████████████████████████-| 99.0% Complete [Obj value 0.835235][2KProgress: |██████████████████████████████████████████████████| 100.0% Complete [Obj value 0.835235]
+[96m# Best objective found with 2 clones: 0.835235
+[0m# Selecting best solution
+# Selecting best solution
+[96m## Objective value is used as scores for diploid results
+[0m[96m## Diploid with 2 clones - OBJ: 0.313355 - score: 0.313355
+[0m[96m## Objective value is used as scores for tetraploid results
+[0m[96m## Tetraploid with 2 clones - OBJ: 0.835235 - score: 0.835235
+[0m[96m# The chosen diploid solution has 2 clones with OBJ: 0.313355 and score: 0.313355
+[0m[96m## The related-diploid resulting files are copied to /data1/shahs3/users/myersm2/repos/hatchet/tests/out/results/chosen.diploid.bbc.ucn and /data1/shahs3/users/myersm2/repos/hatchet/tests/out/results/chosen.diploid.seg.ucn
+[0m[96m# The chosen tetraploid solution has 2 clones with OBJ: 0.835235 and score: 0.835235
+[0m[96m## The related-tetraploid resulting files are copied to /data1/shahs3/users/myersm2/repos/hatchet/tests/out/results/chosen.tetraploid.bbc.ucn and /data1/shahs3/users/myersm2/repos/hatchet/tests/out/results/chosen.tetraploid.seg.ucn
+[0m[96m# The chosen solution is diploid with 2 clones and is written in /data1/shahs3/users/myersm2/repos/hatchet/tests/out/results/best.bbc.ucn and /data1/shahs3/users/myersm2/repos/hatchet/tests/out/results/best.seg.ucn
+[0m
+=============================== warnings summary ===============================
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:64
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:64: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+    prop = Group((name + Suppress("=") + comma_separated(value)) | oneOf(_CONSTANTS))
+
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:45
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_steps.py::test_compute_cn - AssertionError: DataFrame.iloc[...
+1 failed, 14 warnings in 33.79s
+=== stage: verify
+........................................................................ [ 20%]
+........................................................................ [ 40%]
+........................s............................................... [ 60%]
+........................................................................ [ 80%]
+.....................................................................    [100%]
+=============================== warnings summary ===============================
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:64
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:64: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+    prop = Group((name + Suppress("=") + comma_separated(value)) | oneOf(_CONSTANTS))
+
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85: 6 warnings
+tests/test_steps.py: 25 warnings
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:85: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89: 6 warnings
+tests/test_steps.py: 25 warnings
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_fontconfig_pattern.py:89: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+../../../../../../home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:45
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:2010: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+    p.space          = oneOf(self._space_widths)("space")
+
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:2012: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+    p.style_literal  = oneOf(
+
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:2015: PyparsingDeprecationWarning: 'leaveWhitespace' deprecated - use 'leave_whitespace'
+    p.symbol         = Regex(
+
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:2024: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+    p.start_group    = Optional(r"\math" + oneOf(self._fontnames)("font")) + "{"
+
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:2027: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+    p.delim          = oneOf(self._delims)
+
+tests/test_steps.py: 47 warnings
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:1984: PyparsingDeprecationWarning: 'setName' deprecated - use 'set_name'
+    val.setName(key)
+
+tests/test_steps.py: 44 warnings
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:1987: PyparsingDeprecationWarning: 'setParseAction' deprecated - use 'set_parse_action'
+    val.setParseAction(getattr(self, key))
+
+tests/test_steps.py: 16 warnings
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:1748: PyparsingDeprecationWarning: 'setParseAction' deprecated - use 'set_parse_action'
+    return Empty().setParseAction(raise_error)
+
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:2088: PyparsingDeprecationWarning: 'endQuoteChar' argument is deprecated, use 'end_quote_char'
+    p.text = cmd(r"\text", QuotedString('{', '\\', endQuoteChar="}"))
+
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:2097: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+    + OneOrMore(oneOf(["_", "^"]) - p.placeable)("subsuper")
+
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:2146: PyparsingDeprecationWarning: 'unquoteResults' argument is deprecated, use 'unquote_results'
+    p.math_string   = QuotedString('$', '\\', unquoteResults=False)
+
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:2147: PyparsingDeprecationWarning: 'leaveWhitespace' deprecated - use 'leave_whitespace'
+    p.non_math      = Regex(r"(?:(?:\\[$])|[^$])*").leaveWhitespace()
+
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:2170: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    result = self._expression.parseString(s)
+
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:2197: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    return self._math_expression.parseString(toks[0][1:-1], parseAll=True)
+
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/pyparsing/util.py:466: PyparsingDeprecationWarning: 'parseAll' argument is deprecated, use 'parse_all'
+    return fn(self, *args, **kwargs)
+
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/_mathtext.py:2178: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    ParserElement.resetCache()
+
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_bins
+tests/test_steps.py::test_plot_cn
+tests/test_steps.py::test_plot_cn
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/matplotlib/backends/backend_pdf.py:1758: DeprecationWarning: 'mode' parameter is deprecated and will be removed in Pillow 13 (2026-10-15)
+    img = Image.fromarray(rgb8, mode='P')
+
+tests/test_steps.py::test_plot_cn
+tests/test_steps.py::test_plot_cn
+  /home/myersm2/miniforge3/envs/hatchet-test/lib/python3.9/site-packages/seaborn/matrix.py:615: UserWarning: Attempting to set identical low and high xlims makes transformation singular; automatically expanding.
+    ax.set_xlim(0, max_dependent_coord * 1.05)
+
+tests/test_steps_vw.py::test_combine_counts
+tests/test_steps_vw.py::test_combine_counts_phasing
+  /data1/shahs3/users/myersm2/repos/hatchet/src/hatchet/utils/rd_gccorrect.py:27: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
+    gccorrect = bb.groupby('SAMPLE').apply(lambda D: smf.quantreg('RD ~ GC + I(GC ** 2.0)', data=D).fit(q=0.5))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+356 passed, 1 skipped, 213 warnings in 820.57s (0:13:40)
+ tests/data/fw/bb/bulk.bb              |    6 +-
+ tests/data/fw/bbc/bulk.bbc            |    6 +-
+ tests/data/fw/bbc/bulk.seg            |   12 +-
+ tests/data/fw/bin/bulk.1bed           |    6 +-
+ tests/data/fw/results/best.bbc.ucn    |  288 +-
+ tests/data/vw/bb/bulk_nophase.bb      | 9468 ++++++++++++++++-----------------
+ tests/data/vw/bb/bulk_yesphase.bb     | 9468 ++++++++++++++++-----------------
+ tests/data/vw/bbc/bulk.bbc            |    6 +-
+ tests/data/vw/bbc/bulk.seg            |    6 +-
+ tests/data/vw/bbc/bulk_onecl.bbc      |    6 +-
+ tests/data/vw/bbc/bulk_onecl.seg      |    6 +-
+ tests/data/vw/rdr/chr22.thresholds.gz |  Bin 785466 -> 785466 bytes
+ tests/data/vw/rdr/chr22.total.gz      |  Bin 2137017 -> 2137019 bytes
+ tests/data/vw/rdr/total.tsv           |    6 +-
+ 14 files changed, 9642 insertions(+), 9642 deletions(-)

@@ -102,7 +102,7 @@ class TotalCounter(Process):
         popen = subprocess.Popen
         pipe = subprocess.PIPE
         split = shlex.split
-        cmd = '{} view {} -c -q {} {}'.format(self.samtools, bamfile, self.q, chromosome)
+        cmd = '{} view {} -c -F {} -q {} {}'.format(self.samtools, bamfile, sp.EXCLUDE_FLAGS, self.q, chromosome)
         stdout, stderr = popen(split(cmd), stdout=pipe, stderr=pipe, universal_newlines=True).communicate()
         if stderr != '':
             self.progress_bar.progress(
