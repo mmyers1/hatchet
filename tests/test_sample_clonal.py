@@ -343,6 +343,25 @@ def _write_conflicting_solver_inputs(tmp_path):
     return prefix
 
 
+def _write_mixture_solver_inputs(tmp_path):
+    # gamma 3 and purity 0.8 calibrate from clusters 1 (1, 1) and 2 (2, 1). Cluster 3 is (1, 1) at proportion 0.6 and
+    # (3, 1) at proportion 0.2, so its f_A of 1.4 cannot be fit by a single tumor clone at proportion 0.8.
+    prefix = tmp_path / 'mixture-input'
+    prefix.with_suffix('.seg').write_text(
+        '#ID\tSAMPLE\t#BINS\tRD\t#SNPS\tCOV\tALPHA\tBETA\tBAF\n'
+        '1\tTumor\t1\t0.6666666666666666\t20\t30\t10\t10\t0.5\n'
+        '2\tTumor\t1\t0.9333333333333333\t20\t30\t18\t10\t0.35714285714285715\n'
+        '3\tTumor\t1\t0.8\t20\t30\t14\t10\t0.4166666666666667\n'
+    )
+    prefix.with_suffix('.bbc').write_text(
+        '#CHR\tSTART\tEND\tSAMPLE\tRD\t#SNPS\tCOV\tALPHA\tBETA\tBAF\tCLUSTER\n'
+        'chr1\t0\t100\tTumor\t0.6666666666666666\t20\t30\t10\t10\t0.5\t1\n'
+        'chr1\t100\t200\tTumor\t0.9333333333333333\t20\t30\t18\t10\t0.35714285714285715\t2\n'
+        'chr1\t200\t300\tTumor\t0.8\t20\t30\t14\t10\t0.4166666666666667\t3\n'
+    )
+    return prefix
+
+
 def test_python_solver_uses_sample_clonal_scaling_and_explicit_base(tmp_path, monkeypatch):
     captured = {}
 
@@ -759,6 +778,62 @@ def test_compute_cn_separates_samples_with_conflicting_sample_clonal_states(
         assert states.loc[3, f'cn_clone{clone_a}'] == '2|0'
 
 
+@pytest.mark.parametrize('solver', ('gurobi', 'cpp'))
+def test_compute_cn_coordinate_descent_mixes_tumor_clones_with_sample_clonal_states(
+    tmp_path,
+    monkeypatch,
+    solver,
+    sample_clonal_cpp_solver,
+):
+    if solver == 'gurobi':
+        from hatchet.utils.solve import solver_available
+
+        if not solver_available('gurobi'):
+            pytest.skip('a working Gurobi Pyomo solver is unavailable')
+    input_prefix = _write_mixture_solver_inputs(tmp_path)
+    output_folder = tmp_path / 'output'
+    output_folder.mkdir()
+    monkeypatch.setattr(config.compute_cn, 'solver', solver)
+    args = [str(sample_clonal_cpp_solver)] if solver == 'cpp' else []
+    args.extend(
+        [
+            '-i',
+            str(input_prefix),
+            '-x',
+            str(output_folder),
+            '-n',
+            '3',
+            '-p',
+            '10',
+            '-v',
+            '0',
+            '-u',
+            '0.1',
+            '--mode',
+            '2',
+            '-s',
+            '30',
+            '-r',
+            '7',
+            '-j',
+            '1',
+            '-eD',
+            '6',
+            '--diploid',
+            '--sample-clonal',
+            'Tumor=1:1:1,2:2:1',
+        ]
+    )
+    compute_cn(args=args)
+
+    result = pd.read_csv(output_folder / 'best.bbc.ucn', sep='\t')
+    assert abs(result['u_normal'].iloc[0] - 0.2) <= 0.001
+    # only a mixture of two tumor clones fits cluster 3, so coordinate descent must use both
+    assert (result[['u_clone1', 'u_clone2']].iloc[0] > 0.001).all()
+    states = result.groupby('CLUSTER').first()
+    assert states.loc[3, 'cn_clone1'] != states.loc[3, 'cn_clone2']
+
+
 def test_compute_cn_sample_clonal_supports_clone_count_range(tmp_path, monkeypatch):
     from hatchet.utils.solve import solver_available
 
@@ -1120,6 +1195,23 @@ def test_sample_clonal_seed_rejects_insufficient_tumor_clones():
 
     with pytest.raises(ValueError, match='No feasible tumor-clone assignment'):
         ilp.build_random_u(random_seed=7)
+
+
+def test_sample_clonal_seeds_spread_purity_over_additional_clones():
+    ilp = _conflicting_sample_clonal_ilp(n=6)
+    seeds = [ilp.build_random_u(random_seed=random_seed) for random_seed in range(50)]
+
+    for seed in seeds:
+        assert seed[0] == pytest.approx([0.5, 0.4])
+        assert seed.sum(axis=0) == pytest.approx([1.0, 1.0])
+        tumor = seed[1:, :]
+        assert tumor[tumor > ilp.tol].min() >= ilp.mu - ilp.tol
+        assert not any((tumor[:, 0] > ilp.tol) & (tumor[:, 1] > ilp.tol))
+
+    # one tumor clone per sample would leave clones beyond the number of samples unused by every seed
+    present = [seed[1:, :] > ilp.tol for seed in seeds]
+    assert max(int(mask.sum(axis=0).max()) for mask in present) >= 2
+    assert set().union(*(set(mask.any(axis=1).nonzero()[0] + 1) for mask in present)) == {1, 2, 3, 4, 5}
 
 
 @pytest.mark.parametrize(

@@ -221,10 +221,22 @@ DoubleMatrix CoordinateDescent::buildSampleClonalU()
                   return leftConflicts > rightConflicts;
               });
 
+    const std::function<bool(int, int)> cloneAvailable =
+        [this, &fixedClones, &assignedSamples, &cloneCompatible](const int clone, const int sample)
+        {
+            bool compatible = fixedClones[sample].count(clone) == 0 && cloneCompatible(clone, sample);
+            for(std::set<int>::const_iterator assigned = assignedSamples[clone].begin();
+                compatible && assigned != assignedSamples[clone].end(); ++assigned)
+            {
+                compatible = _sampleClonal.samplesCompatible(sample, *assigned);
+            }
+            return compatible;
+        };
+
     std::map<int, int> assignment;
     std::function<bool(std::size_t)> assignSample;
     assignSample =
-        [this, &sampleOrder, &fixedClones, &assignedSamples, &assignment, &cloneCompatible, &assignSample]
+        [this, &sampleOrder, &assignedSamples, &assignment, &cloneAvailable, &assignSample]
         (const std::size_t position) -> bool
         {
             if(position == sampleOrder.size())
@@ -235,13 +247,7 @@ DoubleMatrix CoordinateDescent::buildSampleClonalU()
             IntArray candidates;
             for(int clone = 1; clone < _n; ++clone)
             {
-                bool compatible = fixedClones[sample].count(clone) == 0 && cloneCompatible(clone, sample);
-                for(std::set<int>::const_iterator assigned = assignedSamples[clone].begin();
-                    compatible && assigned != assignedSamples[clone].end(); ++assigned)
-                {
-                    compatible = _sampleClonal.samplesCompatible(sample, *assigned);
-                }
-                if(compatible)
+                if(cloneAvailable(clone, sample))
                 {
                     candidates.push_back(clone);
                 }
@@ -265,11 +271,79 @@ DoubleMatrix CoordinateDescent::buildSampleClonalU()
     {
         throw "No feasible tumor-clone assignment exists for the sample-clonal states";
     }
+
+    // Spread each sample over a random number of compatible clones, as buildRandomU does: with one clone per
+    // sample, clones beyond the number of samples would be absent from every seed and never optimized.
+    std::map<int, IntArray> clonesBySample;
+    IntArray extensionOrder;
     for(std::map<int, int>::const_iterator assigned = assignment.begin(); assigned != assignment.end(); ++assigned)
     {
-        U[assigned->second][assigned->first] = residual[assigned->first];
+        clonesBySample[assigned->first].push_back(assigned->second);
+        extensionOrder.push_back(assigned->first);
+    }
+    std::shuffle(extensionOrder.begin(), extensionOrder.end(), g_rng);
+    for(IntArray::const_iterator sample = extensionOrder.begin(); sample != extensionOrder.end(); ++sample)
+    {
+        std::uniform_int_distribution<> uni(1, _n - 1);
+        int numParts = std::max(uni(g_rng), uni(g_rng));
+        if(_mu > 0.0)
+        {
+            numParts = std::min(numParts, std::max(1, static_cast<int>(std::floor((residual[*sample] + TOL) / _mu))));
+        }
+        IntArray& clones = clonesBySample[*sample];
+        IntArray candidates;
+        for(int clone = 1; clone < _n; ++clone)
+        {
+            if(std::find(clones.begin(), clones.end(), clone) == clones.end() && cloneAvailable(clone, *sample))
+            {
+                candidates.push_back(clone);
+            }
+        }
+        std::shuffle(candidates.begin(), candidates.end(), g_rng);
+        for(IntArray::const_iterator clone = candidates.begin();
+            clone != candidates.end() && static_cast<int>(clones.size()) < numParts; ++clone)
+        {
+            assignedSamples[*clone].insert(*sample);
+            clones.push_back(*clone);
+        }
+    }
+
+    for(std::map<int, IntArray>::const_iterator sample = clonesBySample.begin();
+        sample != clonesBySample.end(); ++sample)
+    {
+        const DoubleArray shares = splitSamplePurity(residual[sample->first], static_cast<int>(sample->second.size()));
+        for(std::size_t part = 0; part < shares.size(); ++part)
+        {
+            U[sample->second[part]][sample->first] = shares[part];
+        }
     }
     return U;
+}
+
+
+DoubleArray CoordinateDescent::splitSamplePurity(const double residual, const int numParts)
+{
+    const double minShare = std::max(_mu, 0.0);
+    const double free = std::max(residual - numParts * minShare, 0.0);
+    std::uniform_real_distribution<double> uniform(0.0, free);
+    DoubleArray cuts(numParts - 1);
+    for(double& cut : cuts)
+    {
+        cut = uniform(g_rng);
+    }
+    std::sort(cuts.begin(), cuts.end());
+
+    DoubleArray shares(numParts, minShare);
+    double previous = 0.0;
+    double assigned = 0.0;
+    for(int part = 0; part < numParts - 1; ++part)
+    {
+        shares[part] += cuts[part] - previous;
+        previous = cuts[part];
+        assigned += shares[part];
+    }
+    shares[numParts - 1] = residual - assigned;
+    return shares;
 }
 
 

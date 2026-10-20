@@ -134,6 +134,8 @@ private:
     DoubleMatrix buildRandomU();
     /// Construct a sample-clonal-compatible random M
     DoubleMatrix buildSampleClonalU();
+    /// Randomly split a sample's residual purity into shares of at least mu each
+    DoubleArray splitSamplePurity(const double residual, const int numParts);
     /// Construct random vector summing up to 1
     DoubleArray buildPartitionVector(const int num_parts);
     ///

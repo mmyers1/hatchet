@@ -838,9 +838,42 @@ class ILPSubset:
         if not assign_sample(0):
             raise ValueError('No feasible tumor-clone assignment exists for the sample-clonal states')
 
-        for sample_index, clone_index in assignment.items():
-            U[clone_index][sample_index] = residual_by_sample[sample_index]
+        # Spread each sample over a random number of compatible clones, as build_random_u does: with one clone per
+        # sample, clones beyond the number of samples would be absent from every seed and never optimized.
+        clones_by_sample = {sample_index: [clone_index] for sample_index, clone_index in assignment.items()}
+        extension_order = list(assignment)
+        np.random.shuffle(extension_order)
+        for sample_index in extension_order:
+            residual = residual_by_sample[sample_index]
+            n_parts = max(np.random.randint(1, self.n), np.random.randint(1, self.n))
+            if self.mu > 0:
+                n_parts = min(n_parts, max(1, math.floor((residual + self.tol) / self.mu)))
+            candidates = [
+                clone_index
+                for clone_index in range(1, self.n)
+                if clone_index not in fixed_tumor_clones[sample_index]
+                and clone_index not in clones_by_sample[sample_index]
+                and all(compatible(sample_index, assigned) for assigned in assigned_samples[clone_index])
+            ]
+            np.random.shuffle(candidates)
+            for clone_index in candidates[: n_parts - 1]:
+                assigned_samples[clone_index].add(sample_index)
+                clones_by_sample[sample_index].append(clone_index)
+
+        for sample_index, clone_indices in clones_by_sample.items():
+            shares = self._split_sample_purity(residual_by_sample[sample_index], len(clone_indices))
+            for clone_index, share in zip(clone_indices, shares):
+                U[clone_index][sample_index] = share
         return U
+
+    def _split_sample_purity(self, residual, n_parts):
+        """Randomly split a sample's residual purity into n_parts shares of at least minprop each."""
+        min_share = max(self.mu, 0.0)
+        free = max(residual - n_parts * min_share, 0.0)
+        cuts = np.sort(np.random.uniform(0.0, free, n_parts - 1))
+        shares = min_share + np.diff(cuts, prepend=0.0, append=free)
+        shares[-1] = residual - shares[:-1].sum()
+        return shares
 
     def condition_fixed_u(self, u):
         if self.fixed_matrix is None:
