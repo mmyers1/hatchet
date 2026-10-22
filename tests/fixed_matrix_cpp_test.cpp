@@ -42,6 +42,7 @@ int main(int argc, char** argv)
         CNMap copyNumbers;
         int base = 1;
         bool ampdel = false;
+        IntSet ampdelExempt;
         int cnstates = -1;
         if(argc >= 4)
         {
@@ -55,6 +56,12 @@ int main(int argc, char** argv)
                 base = 2;
                 ampdel = true;
             }
+            else if(scenario == "ampdel-exempt")
+            {
+                base = 2;
+                ampdel = true;
+                ampdelExempt.insert(0);
+            }
             else if(scenario == "cnstates")
             {
                 cnstates = 1;
@@ -65,7 +72,7 @@ int main(int argc, char** argv)
             }
         }
         const double maxHomdelSize = argc == 5 ? std::stod(argv[4]) : 0.005;
-        fixed.validate(6, 0.03, base, ampdel, cnstates, copyNumbers, weights, maxHomdelSize);
+        fixed.validate(6, 0.03, base, ampdel, ampdelExempt, cnstates, copyNumbers, weights, maxHomdelSize);
 
         IntMatrix A(3, IntArray(clones, 0));
         IntMatrix B(3, IntArray(clones, 0));

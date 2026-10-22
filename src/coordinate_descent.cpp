@@ -12,6 +12,7 @@ CoordinateDescent::CoordinateDescent(const DoubleMatrix& FA,
                                      const double maxHomdelSize,
                                      const int base,
                                      const bool ampdel,
+                                     const IntSet& ampdelExempt,
                                      const CNMap& cn,
                                      const FixedMatrix& fixedMatrix,
                                      const SampleClonal& sampleClonal,
@@ -36,6 +37,7 @@ CoordinateDescent::CoordinateDescent(const DoubleMatrix& FA,
     , _maxHomdelSize(maxHomdelSize)
     , _base(base)
     , _ampdel(ampdel)
+    , _ampdelExempt(ampdelExempt)
     , _cn(cn)
     , _fixedMatrix(fixedMatrix)
     , _sampleClonal(sampleClonal)
@@ -409,7 +411,7 @@ void CoordinateDescent::runWorker()
         }
         std::this_thread::sleep_for(std::chrono::seconds(1));
         if(seed > -1) {
-            Worker worker(_FA, _FB, _bins, _m, _k, _n, _cmax, _d, _mu, _maxHomdelSize, _base, _ampdel, _cn, _fixedMatrix,
+            Worker worker(_FA, _FB, _bins, _m, _k, _n, _cmax, _d, _mu, _maxHomdelSize, _base, _ampdel, _ampdelExempt, _cn, _fixedMatrix,
                           _sampleClonal, _purities,
                           _iterConvergence, _maxIter, _timeLimit, _memoryLimit, _nrILPthreads, _seeds[seed], seed, _v);
             double obj = worker.solve();

@@ -653,6 +653,15 @@ def test_cpp_fixed_matrix_validation_matches_documented_constraints(
     assert message in result.stderr
 
 
+def test_cpp_fixed_matrix_validation_skips_ampdel_exempt_clusters(tmp_path, cpp_fixed_matrix_reader):
+    fixed_path = _write_fixed_matrix(
+        tmp_path,
+        f'{FORMAT_MARKER}\n# clones 3\nmatrix\trow\tcolumn\tvalue\n' 'A\tcluster1\tclone1\t1\nA\tcluster1\tclone2\t3\n',
+    )
+
+    subprocess.run([str(cpp_fixed_matrix_reader), str(fixed_path), '3', 'ampdel-exempt'], check=True)
+
+
 def test_cpp_fixed_matrix_homdel_validation_uses_custom_inclusive_cutoff(
     tmp_path,
     cpp_fixed_matrix_reader,

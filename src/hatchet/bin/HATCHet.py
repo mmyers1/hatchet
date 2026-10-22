@@ -80,6 +80,16 @@ def parsing_arguments(args=None):
         ),
     )
     parser.add_argument(
+        '--ampdel-exempt',
+        type=str,
+        required=False,
+        default=config.compute_cn.ampdelexempt,
+        help=(
+            'Comma-separated cluster IDs allowed to be both amplified and deleted across tumor clones while the '
+            'amp-del assumption remains active for all other clusters (default: none)'
+        ),
+    )
+    parser.add_argument(
         '-c',
         '--clonal',
         type=str,
@@ -385,6 +395,13 @@ def parsing_arguments(args=None):
         )
     if not math.isfinite(args.max_homdel_size) or args.max_homdel_size < 0.0 or args.max_homdel_size > 1.0:
         raise ValueError(error('The maximum homozygous-deletion cluster-size fraction must be in [0, 1]!'))
+    ampdel_exempt = None
+    if args.ampdel_exempt is not None:
+        ampdel_exempt = list(dict.fromkeys(c.strip() for c in str(args.ampdel_exempt).split(',') if c.strip()))
+        if not ampdel_exempt:
+            raise ValueError(error('No cluster IDs were given to --ampdel-exempt!'))
+        if args.noampdel:
+            raise ValueError(error('--ampdel-exempt cannot be used with --noampdel, which disables amp-del!'))
     if args.diploidcmax == 0:
         args.diploidcmax = None
     if args.diploidcmax is not None and args.diploidcmax <= 0:
@@ -462,6 +479,7 @@ def parsing_arguments(args=None):
         'sampleclonal': args.sample_clonal,
         'sampleclonalfile': args.sample_clonal_file,
         'ampdel': not args.noampdel,
+        'ampdel_exempt': ampdel_exempt,
         'd': args.cnstates,
         'max_homdel_size': args.max_homdel_size,
         'eD': args.diploidcmax,
@@ -543,6 +561,10 @@ def main(args=None):
     seg, ssamples = readSEG(args['seg'])
 
     assert bsamples == ssamples, error('Samples in BBC files does not match the ones in SEG file!')
+    if args['ampdel_exempt'] is not None:
+        unknown = [cluster for cluster in args['ampdel_exempt'] if cluster not in seg]
+        if unknown:
+            raise ValueError(error('Amp-del exempt clusters not found in SEG file: {}'.format(', '.join(unknown))))
     samples = ssamples
     if args['purities']:
         assert len(args['purities']) == len(samples), error(
@@ -1072,6 +1094,8 @@ def makeBaseCMD(args, e):
     basecmd = '{} {}'.format(args['solver'], args['input'])
     if args['ampdel']:
         basecmd += ' -f '
+        if args.get('ampdel_exempt'):
+            basecmd += ' --ampdel-exempt {}'.format(shlex.quote(','.join(args['ampdel_exempt'])))
     if args['d'] is not None:
         basecmd += ' -d {}'.format(args['d'])
     if e is not None:
@@ -1380,6 +1404,7 @@ def execute_python(solver, args, n, outprefix):
         base=args['base'],
         sample_clonal=args['sample_clonal_entries'],
         max_homdel_size=args.get('max_homdel_size', 0.005),
+        ampdel_exempt=args.get('ampdel_exempt'),
     )
     if result is None:
         raise RuntimeError('No feasible solution found for the requested constraints')

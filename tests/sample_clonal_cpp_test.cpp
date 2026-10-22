@@ -16,19 +16,30 @@ int main(int argc, char** argv)
         clusters["c3"] = 2;
         std::map<std::string, int> samples;
         samples["Tumor"] = 0;
+        const std::string scenario = argc == 4 ? argv[2] : "";
+        const bool ampdel = scenario == "ampdel" || scenario == "ampdel-exempt";
+        if(ampdel)
+        {
+            samples["Tumor2"] = 1;
+        }
         const SampleClonal sampleClonal = SampleClonal::read(argv[1], clusters, samples);
         if(argc == 4)
         {
             DoubleArray weights;
             weights.push_back(1.0);
             weights.push_back(99.0);
-            if(std::string(argv[2]) == "zero-weight")
+            if(scenario == "zero-weight")
             {
                 weights[0] = 0.0;
                 weights[1] = 100.0;
             }
-            DoubleArray purities(1, 0.5);
-            sampleClonal.validate(6, 1, false, -1, weights, purities, std::stod(argv[3]));
+            IntSet ampdelExempt;
+            if(scenario == "ampdel-exempt")
+            {
+                ampdelExempt.insert(0);
+            }
+            DoubleArray purities(samples.size(), 0.5);
+            sampleClonal.validate(6, 1, ampdel, ampdelExempt, -1, weights, purities, std::stod(argv[3]));
             return 0;
         }
         DoubleMatrix R(3, DoubleArray(1, 5.0));

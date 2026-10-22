@@ -353,8 +353,10 @@ def validate_sample_clonal_constraints(
     weights=None,
     tol=0.001,
     max_homdel_size=0.005,
+    ampdel_exempt=None,
 ):
     positive_entries = [entry for entry in resolved.entries if purities[entry.sample_index] > tol]
+    ampdel_exempt = {str(cluster_id) for cluster_id in (ampdel_exempt or ())}
     weight_by_cluster = None
     if weights is not None:
         if hasattr(weights, 'items'):
@@ -392,6 +394,8 @@ def validate_sample_clonal_constraints(
 
     if ampdel:
         for cluster_index, entries in entries_by_cluster.items():
+            if str(resolved.cluster_ids[cluster_index]) in ampdel_exempt:
+                continue
             for allele, attribute in (('A', 'cn_a'), ('B', 'cn_b')):
                 values = [getattr(entry, attribute) for entry in entries]
                 if any(value < base for value in values) and any(value > base for value in values):

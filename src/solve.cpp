@@ -16,6 +16,7 @@ void printSolutions(const int k, const double obj, const IntMatrix& CA, const In
 void printSolutions(const int k, const int numSolutions, const DoubleArray& obj, const Int3Matrix& CA, const Int3Matrix& CB, const Double3Matrix& U);
 void segmentation(const InputInstance& instance, const BBCInstance& bbc, const int n, const IntMatrix& ACN, const IntMatrix& BCN, const DoubleMatrix& U, const std::string& outprefix, const VERBOSITY_t& verbosity);
 CNMap getCNMap(const ArgParse& argparse, const InputInstance& instance);
+IntSet getAmpdelExempt(const ArgParse& argparse, const InputInstance& instance);
 std::string printFractions(const DoubleMatrix &F, const InputInstance &instance);
 
 
@@ -68,6 +69,7 @@ int main(int argc, char** argv)
         log("Fractional copy numbers:\n" + printFractions(F, instance), VERBOSITY_t::DEBUGGING, argparse.v());
 
         CNMap cn(getCNMap(argparse, instance));
+        IntSet ampdelExempt(getAmpdelExempt(argparse, instance));
 
         int cmax = argparse.cmax() > 0 ? argparse.cmax() : maxCeil(F);
         if(!sampleClonal.empty() && argparse.cmax() <= 0)
@@ -76,7 +78,7 @@ int main(int argc, char** argv)
         }
         if(!sampleClonal.empty())
         {
-            sampleClonal.validate(cmax, argparse.base(), argparse.forceAMPDEL(), argparse.d(), instance.w(), purities,
+            sampleClonal.validate(cmax, argparse.base(), argparse.forceAMPDEL(), ampdelExempt, argparse.d(), instance.w(), purities,
                                   argparse.maxHomdelSize());
         }
         log("Inferred maximum copy number:" + std::to_string(cmax), VERBOSITY_t::DEBUGGING, argparse.v());
@@ -88,12 +90,12 @@ int main(int argc, char** argv)
                                             instance.clusterToIdx(), instance.sampleToIdx());
             if(sampleClonal.empty())
             {
-                fixedMatrix.validate(cmax, argparse.minprop(), argparse.base(), argparse.forceAMPDEL(),
+                fixedMatrix.validate(cmax, argparse.minprop(), argparse.base(), argparse.forceAMPDEL(), ampdelExempt,
                                      argparse.d(), cn, instance.w(), argparse.maxHomdelSize());
             }
             else
             {
-                fixedMatrix.validate(cmax, argparse.minprop(), argparse.base(), argparse.forceAMPDEL(),
+                fixedMatrix.validate(cmax, argparse.minprop(), argparse.base(), argparse.forceAMPDEL(), ampdelExempt,
                                      argparse.d(), cn, instance.w(), sampleClonal, purities, argparse.maxHomdelSize());
             }
         }
@@ -114,7 +116,7 @@ int main(int argc, char** argv)
         {
             log("Starting coordinate descent algorithm on " + std::to_string(argparse.nrSeeds()) + " seeds", VERBOSITY_t::ESSENTIAL, argparse.v());
             CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
-                                 argparse.forceAMPDEL(), cn, fixedMatrix, sampleClonal, purities,
+                                 argparse.forceAMPDEL(), ampdelExempt, cn, fixedMatrix, sampleClonal, purities,
                                  2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1,
                                  argparse.s(), argparse.m(), argparse.v());
             cd.run();
@@ -123,7 +125,7 @@ int main(int argc, char** argv)
 
             log("Starting exact ILP for improving solution found by coordinate descent", VERBOSITY_t::ESSENTIAL, argparse.v());
             IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
-                          argparse.forceAMPDEL(), cn, FA, FB, instance.w(), fixedMatrix, sampleClonal, purities, argparse.v());
+                          argparse.forceAMPDEL(), ampdelExempt, cn, FA, FB, instance.w(), fixedMatrix, sampleClonal, purities, argparse.v());
             ilp.init();
             ilp.hotStart(cd.getACN(), cd.getBCN(), cd.getU());
             ilp.solve(argparse.s(), argparse.m(), argparse.j());
@@ -144,10 +146,10 @@ int main(int argc, char** argv)
         {
             log("Starting exact ILP", VERBOSITY_t::ESSENTIAL, argparse.v());
             IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
-                          argparse.forceAMPDEL(), cn, FA, FB, instance.w(), fixedMatrix, sampleClonal, purities, argparse.v());
+                          argparse.forceAMPDEL(), ampdelExempt, cn, FA, FB, instance.w(), fixedMatrix, sampleClonal, purities, argparse.v());
             ilp.init();
             std::pair<IntMatrix, IntMatrix> hotstart;
-            hotstart = IlpSubset::firstHotStart(FA, FB, instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.base(), argparse.forceAMPDEL(), cn);
+            hotstart = IlpSubset::firstHotStart(FA, FB, instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.base(), argparse.forceAMPDEL(), ampdelExempt, cn);
             fixedMatrix.applyCopyNumbers(hotstart.first, hotstart.second);
             ilp.hotStart(hotstart.first, hotstart.second);
             ilp.solve(argparse.s(), argparse.m(), argparse.j());
@@ -168,7 +170,7 @@ int main(int argc, char** argv)
         {
             log("Starting coordinate descent algorithm on " + std::to_string(argparse.nrSeeds()) + " seeds", VERBOSITY_t::ESSENTIAL, argparse.v());
             CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
-                                 argparse.forceAMPDEL(), cn, fixedMatrix, sampleClonal, purities,
+                                 argparse.forceAMPDEL(), ampdelExempt, cn, fixedMatrix, sampleClonal, purities,
                                  2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1,
                                  argparse.s(), argparse.m(), argparse.v());
             cd.run();
@@ -505,6 +507,20 @@ CNMap getCNMap(const ArgParse& argparse, const InputInstance& instance)
         cnmap.emplace(idx, CNState(cn.second.first, cn.second.second));
     }
     return cnmap;
+}
+
+IntSet getAmpdelExempt(const ArgParse& argparse, const InputInstance& instance)
+{
+    IntSet exempt;
+    for(auto const& cluster : argparse.ampdelExempt())
+    {
+        if(instance.clusters().find(cluster) == instance.clusters().end())
+        {
+            throw "The amp-del exempt cluster with ID " + cluster + " has not been found in the input seg file!";
+        }
+        exempt.insert(instance.clusterToIdx().at(cluster));
+    }
+    return exempt;
 }
 
 std::string printFractions(const DoubleMatrix &F, const InputInstance &instance)

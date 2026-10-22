@@ -292,6 +292,7 @@ bool SampleClonal::samplesCompatible(const int left, const int right) const
 void SampleClonal::validate(const int cmax,
                             const int base,
                             const bool ampdel,
+                            const IntSet& ampdelExempt,
                             const int cnstates,
                             const DoubleArray& weights,
                             const DoubleArray& purities,
@@ -344,6 +345,10 @@ void SampleClonal::validate(const int cmax,
             for(std::map<int, std::vector<int> >::const_iterator values = alleles[allele]->begin();
                 values != alleles[allele]->end(); ++values)
             {
+                if(ampdelExempt.count(values->first) > 0)
+                {
+                    continue;
+                }
                 bool below = false;
                 bool above = false;
                 for(std::vector<int>::const_iterator value = values->second.begin(); value != values->second.end(); ++value)

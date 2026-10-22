@@ -1614,6 +1614,24 @@ def test_cpp_sample_clonal_homdel_validation_ignores_zero_weight_clusters(
     )
 
 
+def test_cpp_sample_clonal_validation_skips_ampdel_exempt_clusters(tmp_path, cpp_sample_clonal_reader):
+    # c1 allele A is deleted in Tumor (0) and amplified in Tumor2 (2) relative to base 1
+    path = _write_sample_clonal(
+        tmp_path,
+        f'{FORMAT_MARKER}\nsample\tcluster\tcn_a\tcn_b\n'
+        'Tumor\tc1\t0\t1\nTumor\tc2\t2\t1\nTumor2\tc1\t2\t1\nTumor2\tc2\t1\t1\n',
+    )
+
+    result = subprocess.run(
+        [str(cpp_sample_clonal_reader), str(path), 'ampdel', '0.005'],
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 1
+    assert 'force both amplification and deletion' in result.stderr
+    subprocess.run([str(cpp_sample_clonal_reader), str(path), 'ampdel-exempt', '0.005'], check=True)
+
+
 def test_compute_cn_documentation_covers_sample_clonal_contract():
     documentation = (Path(__file__).parents[1] / 'docs' / 'source' / 'doc_compute_cn.md').read_text()
 

@@ -25,6 +25,7 @@ IlpSubset::IlpSubset(const int n,
                      const double maxHomdelSize,
                      const int base,
                      const bool ampdel,
+                     const IntSet& ampdelExempt,
                      const CNMap& cn,
                      const DoubleMatrix& FA,
                      const DoubleMatrix& FB,
@@ -42,6 +43,7 @@ IlpSubset::IlpSubset(const int n,
     , _maxHomdelSize(maxHomdelSize)
     , _base(base)
     , _ampdel(ampdel)
+    , _ampdelExempt(ampdelExempt)
     , _cn(cn)
     , _FA(FA)
     , _FB(FB)
@@ -105,7 +107,7 @@ void IlpSubset::fixC(const IntMatrix& barCA, const IntMatrix& barCB)
             {
                 assert(barCA[s][i] + barCB[s][i] <= upper);
                 assert(barCA[s][i] >= 0 && barCB[s][i] >= 0);
-                if(_ampdel)
+                if(_ampdel && _ampdelExempt.count(s) == 0)
                 {
                     adA = adA == 0 && barCA[s][i] > _base ? 1 : adA;
                     adA = adA == 0 && barCA[s][i] < _base ? -1 : adA;
@@ -190,7 +192,7 @@ void IlpSubset::hotStart(const IntMatrix& hCA, const IntMatrix& hCB, const Doubl
             }
         }
 
-        if(_ampdel && _cn.count(s) == 0)
+        if(ampdelApplies(s))
         {
             bool ampA = false;
             bool ampB = false;
@@ -399,7 +401,8 @@ void IlpSubset::printValues()
 
 
 std::pair<IntMatrix, IntMatrix> IlpSubset::firstHotStart(const DoubleMatrix &FA, const DoubleMatrix &FB, const int m, const int k, const int n,
-                                                         const int cmax, const int d, const int base, const bool ampdel, const CNMap& cn)
+                                                         const int cmax, const int d, const int base, const bool ampdel, const IntSet& ampdelExempt,
+                                                         const CNMap& cn)
 {
     IntMatrix targetA;
     IntMatrix targetB;
@@ -474,7 +477,7 @@ std::pair<IntMatrix, IntMatrix> IlpSubset::firstHotStart(const DoubleMatrix &FA,
                     int a = std::min(targetA[s][i % mod], cmax);
                     int b = std::min(targetB[s][i % mod], cmax);
 
-                    if(ampdel)
+                    if(ampdel && ampdelExempt.count(s) == 0)
                     {
                         adA = adA == 0 && a > base ? 1 : adA;
                         adA = adA == 0 && a < base ? -1 : adA;
@@ -585,7 +588,7 @@ void IlpSubset::buildVariables()
             _adB = VarArray(_m);
             for(int s = 0; s < _m; ++s)
             {
-                if(_cn.count(s) == 0)
+                if(ampdelApplies(s))
                 {
                     snprintf(buf, 1024, "adA_%d", s+1);
                     _adA[s] = _model.addVar(0, 1, 0, GRB_BINARY, buf);
@@ -873,7 +876,7 @@ void IlpSubset::buildConstraints()
         {
             for(int s = 0; s < _m; ++s)
             {
-                if(_cn.count(s) == 0)
+                if(ampdelApplies(s))
                 {
                     for(int i = 1; i < _n; ++i)
                     {

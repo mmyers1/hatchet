@@ -307,9 +307,11 @@ def validate_fixed_matrix(
     weights=None,
     tol=0.001,
     max_homdel_size=0.005,
+    ampdel_exempt=None,
 ):
     values = _resolved_values(fixed_matrix)
     copy_numbers = _copy_numbers_by_cluster(copy_numbers)
+    ampdel_exempt = {str(cluster_id) for cluster_id in (ampdel_exempt or ())}
     if base is None:
         base = min(2, len(copy_numbers))
 
@@ -520,7 +522,7 @@ def validate_fixed_matrix(
 
     if ampdel:
         for cluster_index, cluster_id in enumerate(fixed_matrix.cluster_ids):
-            if str(cluster_id) in copy_numbers:
+            if str(cluster_id) in copy_numbers or str(cluster_id) in ampdel_exempt:
                 continue
             for matrix in ('A', 'B'):
                 entries = [

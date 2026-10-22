@@ -59,6 +59,7 @@ public:
     void validate(const int cmax,
                   const int base,
                   const bool ampdel,
+                  const IntSet& ampdelExempt,
                   const int cnstates,
                   const DoubleArray& weights,
                   const DoubleArray& purities,

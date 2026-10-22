@@ -24,6 +24,7 @@ class ILPSubset:
         base=None,
         sample_clonal=None,
         max_homdel_size=0.005,
+        ampdel_exempt=None,
     ):
 
         # Each ILPSubset maintains its own data, so make a deep-copy of passed-in DataFrames
@@ -51,6 +52,7 @@ class ILPSubset:
         self._base = base
         self.sample_clonal = sample_clonal
         self.max_homdel_size = max_homdel_size
+        self.ampdel_exempt = frozenset(ampdel_exempt or ())
 
         self.tol = 0.001
 
@@ -85,6 +87,7 @@ class ILPSubset:
             base=self._base,
             sample_clonal=self.sample_clonal,
             max_homdel_size=self.max_homdel_size,
+            ampdel_exempt=self.ampdel_exempt,
         )
 
     def __str__(self):
@@ -111,6 +114,10 @@ class ILPSubset:
     @property
     def base(self):
         return self._base if self._base is not None else min(2, len(self.copy_numbers))
+
+    def ampdel_applies(self, cluster_id):
+        """Whether the amp-del constraint covers this cluster: not clonal and not exempted by the user."""
+        return self.ampdel and cluster_id not in self.copy_numbers and cluster_id not in self.ampdel_exempt
 
     @staticmethod
     def symmCoeff(i):
@@ -142,7 +149,6 @@ class ILPSubset:
         m, n, k = self.m, self.n, self.k
         f_a, f_b = self.f_a, self.f_b
         cn_max = self.cn_max
-        ampdel = self.ampdel
         copy_numbers = self.copy_numbers
         mode_t = self.mode
         d = self.d
@@ -185,14 +191,12 @@ class ILPSubset:
                     self.cB[_m][_n] = pe.Var(bounds=bounds[('B', _m, _n)], domain=pe.Integers)
                     model.add_component(f'cB_{_m + 1}_{_n + 1}', self.cB[_m][_n])
 
-            if ampdel:
-                for _m in range(m):
-                    cluster_id = f_a.index[_m]
-                    if cluster_id not in copy_numbers:
-                        adA[_m] = pe.Var(bounds=(0, 1), domain=pe.Binary)
-                        model.add_component(f'adA_{_m + 1}', adA[_m])
-                        adB[_m] = pe.Var(bounds=(0, 1), domain=pe.Binary)
-                        model.add_component(f'adB_{_m + 1}', adB[_m])
+            for _m in range(m):
+                if self.ampdel_applies(f_a.index[_m]):
+                    adA[_m] = pe.Var(bounds=(0, 1), domain=pe.Binary)
+                    model.add_component(f'adA_{_m + 1}', adA[_m])
+                    adB[_m] = pe.Var(bounds=(0, 1), domain=pe.Binary)
+                    model.add_component(f'adB_{_m + 1}', adB[_m])
 
         bitcA = {}
         bitcB = {}
@@ -337,15 +341,12 @@ class ILPSubset:
             self.build_copy_number_limits(model)
             self.build_homdel_constraints(model)
 
-            if ampdel:
-                for _m in range(m):
-                    cluster_id = f_a.index[_m]
-                    if cluster_id not in copy_numbers:
-                        for _n in range(1, n):
-                            model.constraints.add(self.cA[_m][_n] <= cn_max * adA[_m] + _base - _base * adA[_m])
-                            model.constraints.add(self.cA[_m][_n] >= _base * adA[_m])
-                            model.constraints.add(self.cB[_m][_n] <= cn_max * adB[_m] + _base - _base * adB[_m])
-                            model.constraints.add(self.cB[_m][_n] >= _base * adB[_m])
+            for _m in adA:
+                for _n in range(1, n):
+                    model.constraints.add(self.cA[_m][_n] <= cn_max * adA[_m] + _base - _base * adA[_m])
+                    model.constraints.add(self.cA[_m][_n] >= _base * adA[_m])
+                    model.constraints.add(self.cB[_m][_n] <= cn_max * adB[_m] + _base - _base * adB[_m])
+                    model.constraints.add(self.cB[_m][_n] >= _base * adB[_m])
 
         if mode_t == 'UARCH':
             # TODO: These loops can be collapsed once validation against C++ is complete
@@ -597,7 +598,7 @@ class ILPSubset:
                         a = min(targetA[_m][_n % mod], self.cn_max)
                         b = min(targetB[_m][_n % mod], self.cn_max)
 
-                        if self.ampdel:
+                        if self.ampdel_applies(cluster_id):
                             base = self.base
                             if adA == 0 and a > base:
                                 adA = 1
@@ -966,6 +967,7 @@ class ILPSubsetSplit(ILPSubset):
         sample_clonal=None,
         w=None,
         max_homdel_size=0.005,
+        ampdel_exempt=None,
     ):
 
         # Each ILPSubset maintains its own data, so make a deep-copy of passed-in DataFrames
@@ -1000,6 +1002,7 @@ class ILPSubsetSplit(ILPSubset):
         self._base = base
         self.sample_clonal = sample_clonal
         self.max_homdel_size = max_homdel_size
+        self.ampdel_exempt = frozenset(ampdel_exempt or ())
 
         self.tol = 0.001
 
@@ -1037,6 +1040,7 @@ class ILPSubsetSplit(ILPSubset):
             sample_clonal=self.sample_clonal,
             w=self.w,
             max_homdel_size=self.max_homdel_size,
+            ampdel_exempt=self.ampdel_exempt,
         )
 
     def create_model(self, pprint=False):
@@ -1044,7 +1048,6 @@ class ILPSubsetSplit(ILPSubset):
         m, n, k = self.m, self.n, self.k
         f_a = self.f_a
         cn_max = self.cn_max
-        ampdel = self.ampdel
         copy_numbers = self.copy_numbers
         mode_t = self.mode
         d = self.d
@@ -1091,14 +1094,12 @@ class ILPSubsetSplit(ILPSubset):
                     self.cB[_m][_n] = pe.Var(bounds=bounds[('B', _m, _n)], domain=pe.Integers)
                     model.add_component(f'cB_{_m + 1}_{_n + 1}', self.cB[_m][_n])
 
-            if ampdel:
-                for _m in range(m):
-                    cluster_id = f_a.index[_m]
-                    if cluster_id not in copy_numbers:
-                        adA[_m] = pe.Var(bounds=(0, 1), domain=pe.Binary)
-                        model.add_component(f'adA_{_m + 1}', adA[_m])
-                        adB[_m] = pe.Var(bounds=(0, 1), domain=pe.Binary)
-                        model.add_component(f'adB_{_m + 1}', adB[_m])
+            for _m in range(m):
+                if self.ampdel_applies(f_a.index[_m]):
+                    adA[_m] = pe.Var(bounds=(0, 1), domain=pe.Binary)
+                    model.add_component(f'adA_{_m + 1}', adA[_m])
+                    adB[_m] = pe.Var(bounds=(0, 1), domain=pe.Binary)
+                    model.add_component(f'adB_{_m + 1}', adB[_m])
 
         bitcA = {}
         bitcB = {}
@@ -1249,15 +1250,12 @@ class ILPSubsetSplit(ILPSubset):
             self.build_copy_number_limits(model)
             self.build_homdel_constraints(model)
 
-            if ampdel:
-                for _m in range(m):
-                    cluster_id = f_a.index[_m]
-                    if cluster_id not in copy_numbers:
-                        for _n in range(1, n):
-                            model.constraints.add(self.cA[_m][_n] <= cn_max * adA[_m] + _base - _base * adA[_m])
-                            model.constraints.add(self.cA[_m][_n] >= _base * adA[_m])
-                            model.constraints.add(self.cB[_m][_n] <= cn_max * adB[_m] + _base - _base * adB[_m])
-                            model.constraints.add(self.cB[_m][_n] >= _base * adB[_m])
+            for _m in adA:
+                for _n in range(1, n):
+                    model.constraints.add(self.cA[_m][_n] <= cn_max * adA[_m] + _base - _base * adA[_m])
+                    model.constraints.add(self.cA[_m][_n] >= _base * adA[_m])
+                    model.constraints.add(self.cB[_m][_n] <= cn_max * adB[_m] + _base - _base * adB[_m])
+                    model.constraints.add(self.cB[_m][_n] >= _base * adB[_m])
 
         if mode_t == 'UARCH':
             # TODO: These loops can be collapsed once validation against C++ is complete

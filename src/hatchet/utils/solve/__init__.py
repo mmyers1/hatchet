@@ -66,6 +66,7 @@ def solve(
     base=None,
     sample_clonal=None,
     max_homdel_size=0.005,
+    ampdel_exempt=None,
 ):
 
     if not np.isfinite(max_homdel_size) or not 0 <= max_homdel_size <= 1:
@@ -92,6 +93,16 @@ def solve(
 
     rdr = df.pivot(index='#ID', columns='SAMPLE', values='RD')
     baf = df.pivot(index='#ID', columns='SAMPLE', values='BAF')
+
+    if ampdel_exempt:
+        if not ampdel:
+            raise ValueError('Amp-del exempt clusters require the amp-del constraint to be active')
+        # Match labels as strings so that IDs given on the command line resolve to the seg file's #ID dtype
+        known = {str(cluster_id): cluster_id for cluster_id in rdr.index}
+        unknown = [label for label in map(str, ampdel_exempt) if label not in known]
+        if unknown:
+            raise ValueError(f'Amp-del exempt clusters not found in the seg file: {", ".join(unknown)}')
+        ampdel_exempt = frozenset(known[label] for label in map(str, ampdel_exempt))
 
     bins = {}  # cluster_id => no. of bins
     for cluster_id, _df in df.groupby('#ID'):
@@ -172,6 +183,7 @@ def solve(
             cnstates=d,
             weights=weights,
             max_homdel_size=max_homdel_size,
+            ampdel_exempt=ampdel_exempt,
         )
 
     resolved_fixed_matrix = None
@@ -193,6 +205,7 @@ def solve(
             cnstates=d,
             weights=weights,
             max_homdel_size=max_homdel_size,
+            ampdel_exempt=ampdel_exempt,
         )
 
     if not binwise:
@@ -212,6 +225,7 @@ def solve(
                 base=base,
                 sample_clonal=resolved_sample_clonal,
                 max_homdel_size=max_homdel_size,
+                ampdel_exempt=ampdel_exempt,
             )
             ilp.create_model(pprint=True)
             return _finalize_solution(
@@ -236,6 +250,7 @@ def solve(
                 base=base,
                 sample_clonal=resolved_sample_clonal,
                 max_homdel_size=max_homdel_size,
+                ampdel_exempt=ampdel_exempt,
             )
             return _finalize_solution(
                 cd.run(
@@ -266,6 +281,7 @@ def solve(
                 base=base,
                 sample_clonal=resolved_sample_clonal,
                 max_homdel_size=max_homdel_size,
+                ampdel_exempt=ampdel_exempt,
             )
             cd_result = cd.run(
                 solver_type=solver,
@@ -293,6 +309,7 @@ def solve(
                 base=base,
                 sample_clonal=resolved_sample_clonal,
                 max_homdel_size=max_homdel_size,
+                ampdel_exempt=ampdel_exempt,
             )
             ilp.create_model()
             ilp.hot_start(cA, cB, u)
@@ -365,6 +382,7 @@ def solve(
                 sample_clonal=resolved_sample_clonal,
                 w=weights,
                 max_homdel_size=max_homdel_size,
+                ampdel_exempt=ampdel_exempt,
             )
             ilp.create_model(pprint=True)
             return _finalize_solution(
@@ -392,6 +410,7 @@ def solve(
                 sample_clonal=resolved_sample_clonal,
                 w=weights,
                 max_homdel_size=max_homdel_size,
+                ampdel_exempt=ampdel_exempt,
             )
             return _finalize_solution(
                 cd.run(
@@ -425,6 +444,7 @@ def solve(
                 sample_clonal=resolved_sample_clonal,
                 w=weights,
                 max_homdel_size=max_homdel_size,
+                ampdel_exempt=ampdel_exempt,
             )
             cd_result = cd.run(
                 solver_type=solver,
@@ -455,6 +475,7 @@ def solve(
                 sample_clonal=resolved_sample_clonal,
                 w=weights,
                 max_homdel_size=max_homdel_size,
+                ampdel_exempt=ampdel_exempt,
             )
             ilp.create_model()
             ilp.hot_start(cA, cB, u)

@@ -34,6 +34,7 @@ public:
               const double maxHomdelSize,
               const int base,
               const bool ampdel,
+              const IntSet& ampdelExempt,
               const CNMap& cn,
               const DoubleMatrix& FA,
               const DoubleMatrix& FB,
@@ -113,10 +114,16 @@ public:
     void printValues();
 
     static std::pair<IntMatrix, IntMatrix> firstHotStart(const DoubleMatrix &FA, const DoubleMatrix &FB, const int m, const int k, const int n,
-                                                         const int cmax, const int d, const int base, const bool ampdel, const CNMap& cn);
+                                                         const int cmax, const int d, const int base, const bool ampdel, const IntSet& ampdelExempt,
+                                                         const CNMap& cn);
 
 private:
 
+    /// Whether the amp-del constraint covers segment s: not clonal and not exempted by the user
+    bool ampdelApplies(const int s) const
+    {
+        return _ampdel && _cn.count(s) == 0 && _ampdelExempt.count(s) == 0;
+    }
     /// Build main common variables
     void buildVariables();
     /// Build the variables that depend on the chosen second objective
@@ -166,6 +173,8 @@ private:
     const int _base;
     ///
     const bool _ampdel;
+    /// Clusters exempt from the amp-del constraint
+    const IntSet& _ampdelExempt;
     ///
     const CNMap& _cn;
     /// Read depth ratio r_{t, p} for each segment t in each sample p

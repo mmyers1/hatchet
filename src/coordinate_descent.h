@@ -20,6 +20,7 @@ public:
                       const double maxHomdelSize,
                       const int base,
                       const bool ampdel,
+                      const IntSet& ampdelExempt,
                       const CNMap& cn,
                       const FixedMatrix& fixedMatrix,
                       const SampleClonal& sampleClonal,
@@ -82,6 +83,8 @@ private:
     const int _base;
     ///
     const bool _ampdel;
+    /// Clusters exempt from the amp-del constraint
+    const IntSet& _ampdelExempt;
     ///
     const CNMap& _cn;
     /// Sparse user-specified A, B, and U entries

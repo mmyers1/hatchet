@@ -13,6 +13,7 @@ Worker::Worker(const DoubleMatrix& FA,
                const double maxHomdelSize,
                const int base,
                const bool ampdel,
+               const IntSet& ampdelExempt,
                const CNMap& cn,
                const FixedMatrix& fixedMatrix,
                const SampleClonal& sampleClonal,
@@ -37,6 +38,7 @@ Worker::Worker(const DoubleMatrix& FA,
     , _maxHomdelSize(maxHomdelSize)
     , _base(base)
     , _ampdel(ampdel)
+    , _ampdelExempt(ampdelExempt)
     , _cn(cn)
     , _fixedMatrix(fixedMatrix)
     , _sampleClonal(sampleClonal)
@@ -66,13 +68,13 @@ double Worker::solve()
     bool first = true;
 
     std::pair<IntMatrix, IntMatrix> hotstart;
-    hotstart = IlpSubset::firstHotStart(_FA, _FB, _m, _k, _n, _cmax, _d, _base, _ampdel, _cn);
+    hotstart = IlpSubset::firstHotStart(_FA, _FB, _m, _k, _n, _cmax, _d, _base, _ampdel, _ampdelExempt, _cn);
     _fixedMatrix.applyCopyNumbers(hotstart.first, hotstart.second);
 
     while((iter_convergence < _iterConvergence) && (iter < _maxIter))
     {
         g_mutex.lock();
-        IlpSubset carch(_n, _m, _k, _cmax, _d, _mu, _maxHomdelSize, _base, _ampdel, _cn, _FA, _FB, _bins, _fixedMatrix,
+        IlpSubset carch(_n, _m, _k, _cmax, _d, _mu, _maxHomdelSize, _base, _ampdel, _ampdelExempt, _cn, _FA, _FB, _bins, _fixedMatrix,
                    _sampleClonal, _purities, _v);
         g_mutex.unlock();
 
@@ -101,7 +103,7 @@ double Worker::solve()
         }
 
         g_mutex.lock();
-        IlpSubset uarch(_n, _m, _k, _cmax, _d, _mu, _maxHomdelSize, _base, _ampdel, _cn, _FA, _FB, _bins, _fixedMatrix,
+        IlpSubset uarch(_n, _m, _k, _cmax, _d, _mu, _maxHomdelSize, _base, _ampdel, _ampdelExempt, _cn, _FA, _FB, _bins, _fixedMatrix,
                    _sampleClonal, _purities, _v);
         g_mutex.unlock();
 

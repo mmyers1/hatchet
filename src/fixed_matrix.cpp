@@ -286,6 +286,7 @@ void FixedMatrix::validate(const int cmax,
                            const double mu,
                            const int base,
                            const bool ampdel,
+                           const IntSet& ampdelExempt,
                            const int cnstates,
                            const CNMap& copyNumbers,
                            const DoubleArray& weights,
@@ -367,7 +368,7 @@ void FixedMatrix::validate(const int cmax,
             throw formatError(_source, 1, "fixed entries exceed the maximum number of copy-number states");
         }
 
-        if(ampdel && clonal == copyNumbers.end())
+        if(ampdel && clonal == copyNumbers.end() && ampdelExempt.count(segment) == 0)
         {
             for(int matrix = MATRIX_A; matrix <= MATRIX_B; ++matrix)
             {
@@ -442,6 +443,7 @@ void FixedMatrix::validate(const int cmax,
                            const double mu,
                            const int base,
                            const bool ampdel,
+                           const IntSet& ampdelExempt,
                            const int cnstates,
                            const CNMap& copyNumbers,
                            const DoubleArray& weights,
@@ -449,7 +451,7 @@ void FixedMatrix::validate(const int cmax,
                            const DoubleArray& purities,
                            const double maxHomdelSize) const
 {
-    validate(cmax, mu, base, ampdel, cnstates, copyNumbers, weights, maxHomdelSize);
+    validate(cmax, mu, base, ampdel, ampdelExempt, cnstates, copyNumbers, weights, maxHomdelSize);
     if(sampleClonal.empty())
     {
         return;

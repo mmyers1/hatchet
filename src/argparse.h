@@ -135,6 +135,11 @@ public:
         return _f;
     }
 
+    const StringSet& ampdelExempt() const
+    {
+        return _ampdelExempt;
+    }
+
 private:
 
     /// Number of arguments
@@ -193,6 +198,8 @@ private:
     bool _baseSpecified;
     ///
     bool _f;
+    /// Cluster IDs exempt from the amp-del constraint
+    StringSet _ampdelExempt;
 
     /// Set of total arguments
     std::set<std::string> _args;
