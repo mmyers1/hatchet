@@ -140,6 +140,21 @@ public:
         return _ampdelExempt;
     }
 
+    const StringSet& cnstatesExempt() const
+    {
+        return _cnstatesExempt;
+    }
+
+    const std::map<std::string, int>& clusterCnstates() const
+    {
+        return _clusterCnstates;
+    }
+
+    CNSTATES_FORMULATION_t cnstatesFormulation() const
+    {
+        return _cnstatesFormulation;
+    }
+
 private:
 
     /// Number of arguments
@@ -200,6 +215,12 @@ private:
     bool _f;
     /// Cluster IDs exempt from the amp-del constraint
     StringSet _ampdelExempt;
+    /// Cluster IDs exempt from the -d limit on distinct tumor copy-number states
+    StringSet _cnstatesExempt;
+    /// Cluster IDs with their own limit on distinct tumor copy-number states
+    std::map<std::string, int> _clusterCnstates;
+    /// Formulation of the limit on distinct tumor copy-number states
+    CNSTATES_FORMULATION_t _cnstatesFormulation;
 
     /// Set of total arguments
     std::set<std::string> _args;

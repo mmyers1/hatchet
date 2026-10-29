@@ -1,5 +1,7 @@
 # Plan: faster, leaner count_reads / count_alleles / genotype_snps / phase_snps with identical output
 
+> 2026-10-25: the benchmark and verification scripts of this log moved to `benchmarks/2026-09-24-preprocessing-efficiency/` (shared `measure.py`: `benchmarks/common/measure.py`); job logs stay in `ai-logs/`. See `ai-logs/2026-10-25-CNSTATES_CLUSTER_LIMITS.md`.
+
 Status: **done and verified locally; job 4 (WGS) fixed and ready to submit; job 5 (rerun on a compute node) pending** (branch `osteo`, not committed). Progress and results are logged at the bottom of this file.
 
 ## Record
@@ -274,7 +276,7 @@ The biggest win is not visible on these test BAMs, which are almost all chr22: w
 - **Pre-existing, left alone:** `phase_snps.cleanup()` only removes intermediates for chromosomes named 1-22 (X's remain). (`count_chromosome`'s skip check, listed here before, was fixed on 2026-09-25.)
 - **hg38 liftover path of phase-snps:** optimized on 2026-09-25 (`filter -Ou | norm`), checked at the bcftools level; end-to-end check is job 3 of the Continuation section.
 - **Not yet measured on a real WGS dataset**; all numbers above are from the `data/` BAMs and synthetic inputs. See job 4 of the Continuation section.
-- Not committed. The verification scripts now live in `ai-logs/2026-09-24-preprocessing-efficiency/`; the 2026-09-24 run outputs were in the (temporary) session scratchpad.
+- Not committed. The verification scripts now live in `benchmarks/2026-09-24-preprocessing-efficiency/`; the 2026-09-24 run outputs were in the (temporary) session scratchpad.
 
 ## Continuation (2026-09-25)
 
@@ -283,14 +285,14 @@ User instructions for this round: use `refpaneldir=/data1/shahs3/users/myersm2/r
 ### Method
 
 - The phasing-panel directory is complete, unlike the repo-root files: full-size `hg19.fa.gz` (949 MB), `hg19_no_chr.fa` (3.2 GB) with its `.dict`, all four chain files, both rename files, and the chrX panel files. With it the hg38 path of phase-snps (liftover hg38 → hg19 panel → hg38) can be exercised, so that path gets its `-Ou` change now, plus a job that verifies it end to end.
-- Only light work runs here: unit tests, a seconds-long bcftools check, script syntax checks, the reinstall. The heavier checks are scripts in `ai-logs/2026-09-24-preprocessing-efficiency/` for the user to run.
+- Only light work runs here: unit tests, a seconds-long bcftools check, script syntax checks, the reinstall. The heavier checks are scripts in `benchmarks/2026-09-24-preprocessing-efficiency/` for the user to run.
 
 ### Progress log
 
 - **phase-snps hg38 liftover:** `bcftools filter` now writes uncompressed BCF (`--output-type u`) into `bcftools norm`, as the hg19 path already pipes annotate into view. Light check on an indexed copy of the chr22 test VCF standing in for picard's output: `filter -Oz | norm` and `filter -Ou | norm` give identical records (276,614) and both write bgzip; only the recorded `##bcftools_*Command` lines differ. The full path (picard included) is job 3 below.
 - **Tests trimmed to minimal size** (project CLAUDE.md): `tests/test_counting_equivalence.py` now runs **316 cases in 4.7 s** (was 1,120 in ~20 s). Every edge class is still covered: 32 read-start cases where the original asserts plus 20 with unchecked disorder past the last threshold; 20 each of contiguous, non-monotonic, asserting and partial coverage cases; 16 selection and 14 het-mask cases raising ZeroDivisionError; the empty starts file in `test_form_counts_array`.
 - **hatchet-test reinstalled** (`module load gurobi && pip install --no-deps .`); installed modules match `src/`.
-- **Verification scripts** in `ai-logs/2026-09-24-preprocessing-efficiency/` (syntax-checked; `compare.sh` checked against this session's scratch runs, where it reproduces the all-identical result):
+- **Verification scripts** in `benchmarks/2026-09-24-preprocessing-efficiency/` (syntax-checked; `compare.sh` checked against this session's scratch runs, where it reproduces the all-identical result):
   - `env.sh`: paths (hatchet-test python, tools from the `hatchet` env, phasing-panel, hg19 and GRCh38 references), `PYTHONHASHSEED=0`, `code_src old|new` (old code = `git archive 1d6ab0b src`, run via `PYTHONPATH`; new = `src/`), `measure`.
   - `measure.py`: wall/CPU time, peak RSS of the process tree, of the Python processes, and of the largest process per program.
   - `compare.sh <old> <new>`: every output file (VCF records + `#CHROM` line; gzipped files decompressed; others byte for byte; logs, indexes and shapeit's `*_alignments.log` skipped), then the time/memory table. Exit 1 on any difference.
@@ -309,7 +311,7 @@ All paths are absolute; the work directories below are suggestions (anywhere wit
    Expect `316 passed`.
 2. **Existing step tests with the phasing panel**, new and old code (~15 min each, 4 cores):
    ```bash
-   V=/data1/shahs3/users/myersm2/repos/hatchet/ai-logs/2026-09-24-preprocessing-efficiency
+   V=/data1/shahs3/users/myersm2/repos/hatchet/benchmarks/2026-09-24-preprocessing-efficiency
    sbatch -p cpushort -c 4 --mem 16G -t 1:30:00 -o tests-new-%j.log --wrap "bash $V/run_tests.sh /data1/shahs3/users/myersm2/hatchet-preproc-verify/tests new"
    sbatch -p cpushort -c 4 --mem 16G -t 1:30:00 -o tests-old-%j.log --wrap "bash $V/run_tests.sh /data1/shahs3/users/myersm2/hatchet-preproc-verify/tests old"
    ```
@@ -346,7 +348,7 @@ All paths are absolute; the work directories below are suggestions (anywhere wit
 
 5. **Rerun the two unexplained tests**, new then old, in a fresh work directory (~12 min each; give the session ≥ 8 GB):
    ```bash
-   V=/data1/shahs3/users/myersm2/repos/hatchet/ai-logs/2026-09-24-preprocessing-efficiency
+   V=/data1/shahs3/users/myersm2/repos/hatchet/benchmarks/2026-09-24-preprocessing-efficiency
    W=/data1/shahs3/users/myersm2/hatchet-preproc-verify/tests2
    bash $V/run_tests.sh $W new 'test_count_reads or test_script'
    bash $V/run_tests.sh $W old 'test_count_reads or test_script'
@@ -400,7 +402,7 @@ All paths are absolute; the work directories below are suggestions (anywhere wit
 ### Job for the user
 
 ```bash
-cd /data1/shahs3/users/myersm2/repos/hatchet/ai-logs/2026-09-24-preprocessing-efficiency
+cd /data1/shahs3/users/myersm2/repos/hatchet/benchmarks/2026-09-24-preprocessing-efficiency
 PREFLIGHT_ONLY=1 bash wgs_compare.sh      # seconds; the last line must be "pre-flight OK"
 sbatch wgs_compare.sh                     # componc_cpu, 8 cores, 64 GB, 2 days
 ```

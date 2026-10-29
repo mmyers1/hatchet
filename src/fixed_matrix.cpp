@@ -287,7 +287,7 @@ void FixedMatrix::validate(const int cmax,
                            const int base,
                            const bool ampdel,
                            const IntSet& ampdelExempt,
-                           const int cnstates,
+                           const IntArray& cnstates,
                            const CNMap& copyNumbers,
                            const DoubleArray& weights,
                            const double maxHomdelSize) const
@@ -363,7 +363,8 @@ void FixedMatrix::validate(const int cmax,
                 }
             }
         }
-        if(cnstates > 0 && static_cast<int>(states.size()) > cnstates)
+        const int limit = segmentCnstates(cnstates, segment);
+        if(limit > 0 && static_cast<int>(states.size()) > limit)
         {
             throw formatError(_source, 1, "fixed entries exceed the maximum number of copy-number states");
         }
@@ -444,7 +445,7 @@ void FixedMatrix::validate(const int cmax,
                            const int base,
                            const bool ampdel,
                            const IntSet& ampdelExempt,
-                           const int cnstates,
+                           const IntArray& cnstates,
                            const CNMap& copyNumbers,
                            const DoubleArray& weights,
                            const SampleClonal& sampleClonal,

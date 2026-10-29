@@ -43,6 +43,29 @@ def _finalize_solution(result, fixed_matrix, sample_clonal=None, purities=None):
     return result
 
 
+def resolve_cluster_cnstates(d, cnstates_exempt, cluster_cnstates, cluster_ids):
+    """Map seg cluster IDs to their own limit on distinct tumor states (None for no limit), which overrides d.
+
+    cnstates_exempt lists clusters without a limit; cluster_cnstates maps clusters to a positive limit. Only one of the
+    two may be given, and labels are matched to the seg file's #ID values as strings.
+    """
+    if cnstates_exempt and cluster_cnstates:
+        raise ValueError('Give only one of the cnstates-exempt clusters and the cluster-specific cnstates')
+    if cnstates_exempt and (d is None or d <= 0):
+        raise ValueError('cnstates-exempt clusters require a global --cnstates limit')
+    requested = dict.fromkeys(map(str, cnstates_exempt or ()))
+    for label, limit in (cluster_cnstates or {}).items():
+        if isinstance(limit, bool) or not isinstance(limit, (int, np.integer)) or limit <= 0:
+            raise ValueError(f'The cnstates limit of cluster {label} must be a positive integer, not {limit!r}')
+        requested[str(label)] = int(limit)
+
+    known = {str(cluster_id): cluster_id for cluster_id in cluster_ids}
+    unknown = [label for label in requested if label not in known]
+    if unknown:
+        raise ValueError(f'cnstates clusters not found in the seg file: {", ".join(unknown)}')
+    return {known[label]: limit for label, limit in requested.items()}
+
+
 def solve(
     clonal,
     bbc_file,
@@ -67,6 +90,8 @@ def solve(
     sample_clonal=None,
     max_homdel_size=0.005,
     ampdel_exempt=None,
+    cnstates_exempt=None,
+    cluster_cnstates=None,
 ):
 
     if not np.isfinite(max_homdel_size) or not 0 <= max_homdel_size <= 1:
@@ -103,6 +128,8 @@ def solve(
         if unknown:
             raise ValueError(f'Amp-del exempt clusters not found in the seg file: {", ".join(unknown)}')
         ampdel_exempt = frozenset(known[label] for label in map(str, ampdel_exempt))
+
+    cluster_cnstates = resolve_cluster_cnstates(d, cnstates_exempt, cluster_cnstates, rdr.index)
 
     bins = {}  # cluster_id => no. of bins
     for cluster_id, _df in df.groupby('#ID'):
@@ -184,6 +211,7 @@ def solve(
             weights=weights,
             max_homdel_size=max_homdel_size,
             ampdel_exempt=ampdel_exempt,
+            cluster_cnstates=cluster_cnstates,
         )
 
     resolved_fixed_matrix = None
@@ -206,6 +234,7 @@ def solve(
             weights=weights,
             max_homdel_size=max_homdel_size,
             ampdel_exempt=ampdel_exempt,
+            cluster_cnstates=cluster_cnstates,
         )
 
     if not binwise:
@@ -226,6 +255,7 @@ def solve(
                 sample_clonal=resolved_sample_clonal,
                 max_homdel_size=max_homdel_size,
                 ampdel_exempt=ampdel_exempt,
+                cluster_cnstates=cluster_cnstates,
             )
             ilp.create_model(pprint=True)
             return _finalize_solution(
@@ -251,6 +281,7 @@ def solve(
                 sample_clonal=resolved_sample_clonal,
                 max_homdel_size=max_homdel_size,
                 ampdel_exempt=ampdel_exempt,
+                cluster_cnstates=cluster_cnstates,
             )
             return _finalize_solution(
                 cd.run(
@@ -282,6 +313,7 @@ def solve(
                 sample_clonal=resolved_sample_clonal,
                 max_homdel_size=max_homdel_size,
                 ampdel_exempt=ampdel_exempt,
+                cluster_cnstates=cluster_cnstates,
             )
             cd_result = cd.run(
                 solver_type=solver,
@@ -310,6 +342,7 @@ def solve(
                 sample_clonal=resolved_sample_clonal,
                 max_homdel_size=max_homdel_size,
                 ampdel_exempt=ampdel_exempt,
+                cluster_cnstates=cluster_cnstates,
             )
             ilp.create_model()
             ilp.hot_start(cA, cB, u)
@@ -383,6 +416,7 @@ def solve(
                 w=weights,
                 max_homdel_size=max_homdel_size,
                 ampdel_exempt=ampdel_exempt,
+                cluster_cnstates=cluster_cnstates,
             )
             ilp.create_model(pprint=True)
             return _finalize_solution(
@@ -411,6 +445,7 @@ def solve(
                 w=weights,
                 max_homdel_size=max_homdel_size,
                 ampdel_exempt=ampdel_exempt,
+                cluster_cnstates=cluster_cnstates,
             )
             return _finalize_solution(
                 cd.run(
@@ -445,6 +480,7 @@ def solve(
                 w=weights,
                 max_homdel_size=max_homdel_size,
                 ampdel_exempt=ampdel_exempt,
+                cluster_cnstates=cluster_cnstates,
             )
             cd_result = cd.run(
                 solver_type=solver,
@@ -476,6 +512,7 @@ def solve(
                 w=weights,
                 max_homdel_size=max_homdel_size,
                 ampdel_exempt=ampdel_exempt,
+                cluster_cnstates=cluster_cnstates,
             )
             ilp.create_model()
             ilp.hot_start(cA, cB, u)

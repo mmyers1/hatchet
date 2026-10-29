@@ -308,6 +308,7 @@ def validate_fixed_matrix(
     tol=0.001,
     max_homdel_size=0.005,
     ampdel_exempt=None,
+    cluster_cnstates=None,
 ):
     values = _resolved_values(fixed_matrix)
     copy_numbers = _copy_numbers_by_cluster(copy_numbers)
@@ -558,8 +559,11 @@ def validate_fixed_matrix(
                             f'large cluster {cluster_label!r} cannot have fixed tumor copy number (0, 0)',
                         )
 
-    if cnstates is not None and cnstates > 0:
-        for cluster_index, cluster_id in enumerate(fixed_matrix.cluster_ids):
+    # a cluster's own limit (None for no limit) overrides cnstates
+    cluster_cnstates = {str(cluster_id): limit for cluster_id, limit in (cluster_cnstates or {}).items()}
+    for cluster_index, cluster_id in enumerate(fixed_matrix.cluster_ids):
+        limit = cluster_cnstates.get(str(cluster_id), cnstates)
+        if limit is not None and limit > 0:
             complete_states = []
             for clone_index in range(1, fixed_matrix.clones):
                 entry_a = values.get(('A', cluster_index, clone_index))
@@ -567,7 +571,7 @@ def validate_fixed_matrix(
                 if entry_a is not None and entry_b is not None:
                     complete_states.append((entry_a.value, entry_b.value, entry_b))
             distinct_states = {(state_a, state_b) for state_a, state_b, _ in complete_states}
-            if len(distinct_states) > cnstates:
+            if len(distinct_states) > limit:
                 error_entry = max(
                     (entry for _, _, entry in complete_states),
                     key=lambda entry: entry.source_entry.line_number,
@@ -576,7 +580,7 @@ def validate_fixed_matrix(
                     fixed_matrix,
                     error_entry,
                     f'cluster {str(cluster_id)!r} fixes {len(distinct_states)} distinct tumor states, '
-                    f'exceeding cnstates {cnstates}',
+                    f'exceeding cnstates {limit}',
                 )
 
     return fixed_matrix

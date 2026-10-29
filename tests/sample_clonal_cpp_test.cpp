@@ -18,7 +18,8 @@ int main(int argc, char** argv)
         samples["Tumor"] = 0;
         const std::string scenario = argc == 4 ? argv[2] : "";
         const bool ampdel = scenario == "ampdel" || scenario == "ampdel-exempt";
-        if(ampdel)
+        const bool cnstatesScenario = scenario == "cnstates" || scenario == "cnstates-exempt";
+        if(ampdel || cnstatesScenario)
         {
             samples["Tumor2"] = 1;
         }
@@ -38,8 +39,17 @@ int main(int argc, char** argv)
             {
                 ampdelExempt.insert(0);
             }
+            IntArray cnstates;
+            if(cnstatesScenario)
+            {
+                cnstates = IntArray(3, 1);
+                if(scenario == "cnstates-exempt")
+                {
+                    cnstates[0] = -1;
+                }
+            }
             DoubleArray purities(samples.size(), 0.5);
-            sampleClonal.validate(6, 1, ampdel, ampdelExempt, -1, weights, purities, std::stod(argv[3]));
+            sampleClonal.validate(6, 1, ampdel, ampdelExempt, cnstates, weights, purities, std::stod(argv[3]));
             return 0;
         }
         DoubleMatrix R(3, DoubleArray(1, 5.0));

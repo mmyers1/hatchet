@@ -1,0 +1,104 @@
+{
+  "_comment": [
+    "Synthetic compute-cn scenarios for the per-cluster cnstates limits (see README.md).",
+    "Each scenario overrides 'defaults'; 'smoke' overrides are applied on top when simulate.py runs with --smoke.",
+    "tumor_clones counts tumor clones only (compute-cn -n counts the normal clone too). D is the --cnstates limit",
+    "of the 'd*' configurations and defaults to background_states. Noise levels are standard deviations: rd_* are",
+    "relative to the read-depth ratio, baf_* are absolute."
+  ],
+  "defaults": {
+    "seed": 2026,
+    "clusters": 120,
+    "samples": 12,
+    "tumor_clones": 3,
+    "bins": 6000,
+    "bin_size": 50000,
+    "wgd": false,
+    "cmax_truth": 5,
+    "neutral_share": 0.25,
+    "second_share": 0.1,
+    "size_sigma": 0.8,
+    "min_bins": 5,
+    "frac_background": 0.07,
+    "background_states": 2,
+    "frac_hot": 0.03,
+    "hot_states": 3,
+    "purity": [0.4, 0.9],
+    "minprop": 0.12,
+    "dirichlet_alpha": 0.5,
+    "dominance": 1.5,
+    "rd_noise": 0.01,
+    "baf_noise": 0.005,
+    "bin_rd_noise": 0.08,
+    "bin_baf_noise": 0.04,
+    "clones": "2,6",
+    "compute_cn_args": ["--diploid", "-eD", "6", "-ts", "0", "-td", "0.03"],
+    "modes": [2],
+    "timelimit": null,
+    "configs": ["free", "free_old", "d", "d_exempt", "d_exempt_partial", "map_oracle"]
+  },
+  "smoke": {
+    "clusters": 12,
+    "samples": 3,
+    "tumor_clones": 2,
+    "bins": 600,
+    "frac_background": 0.1,
+    "frac_hot": 0.1,
+    "hot_states": 2,
+    "background_states": 1,
+    "D": 1,
+    "clones": "2,4",
+    "modes": [2],
+    "timelimit": 60
+  },
+  "scenarios": {
+    "lowhet": {
+      "modes": [2, 0],
+      "timelimit": 600,
+      "configs": [
+        "free", "free_old", "d", "d_exempt", "d_exempt_partial", "map_oracle", "d_exempt_pairwise", "d1_exempt",
+        "d3_exempt"
+      ]
+    },
+    "lowhet_noisy": {
+      "rd_noise": 0.02,
+      "baf_noise": 0.01,
+      "bin_rd_noise": 0.16,
+      "bin_baf_noise": 0.08
+    },
+    "moderate": {
+      "clusters": 150,
+      "samples": 10,
+      "tumor_clones": 4,
+      "frac_background": 0.3,
+      "frac_hot": 0.1,
+      "hot_states": 4
+    },
+    "nohot": {
+      "samples": 10,
+      "frac_background": 0.15,
+      "frac_hot": 0.0,
+      "configs": ["free", "free_old", "d", "map_oracle"]
+    },
+    "wgd": {
+      "samples": 10,
+      "wgd": true,
+      "cmax_truth": 8,
+      "compute_cn_args": ["--tetraploid", "-eT", "12", "-ts", "0", "-td", "0.03"]
+    },
+    "scale": {
+      "clusters": 300,
+      "samples": 20,
+      "tumor_clones": 5,
+      "bins": 12000,
+      "frac_background": 0.15,
+      "background_states": 3,
+      "frac_hot": 0.05,
+      "hot_states": 5,
+      "clones": "2,8",
+      "modes": [2, 0],
+      "timelimit": 1800,
+      "configs": ["free", "free_old", "d", "d_exempt", "d_exempt_partial", "map_oracle", "d_exempt_pairwise"]
+    }
+  }
+}

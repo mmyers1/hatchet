@@ -29,7 +29,7 @@ public:
               const int m,
               const int k,
               const int maxc,
-              const int d,
+              const IntArray& cnstates,
               const double mu,
               const double maxHomdelSize,
               const int base,
@@ -111,11 +111,35 @@ public:
         return _model.get(GRB_DoubleAttr_UB);
     }
 
+    /// Model size: rows, integer and binary variables, and nonzeros
+    int numConstrs()
+    {
+        return _model.get(GRB_IntAttr_NumConstrs);
+    }
+
+    int numDiscreteVars()
+    {
+        return _model.get(GRB_IntAttr_NumIntVars);
+    }
+
+    int numNonzeros()
+    {
+        return _model.get(GRB_IntAttr_NumNZs);
+    }
+
     void printValues();
 
     static std::pair<IntMatrix, IntMatrix> firstHotStart(const DoubleMatrix &FA, const DoubleMatrix &FB, const int m, const int k, const int n,
-                                                         const int cmax, const int d, const int base, const bool ampdel, const IntSet& ampdelExempt,
+                                                         const int cmax, const IntArray& cnstates, const int base, const bool ampdel, const IntSet& ampdelExempt,
                                                          const CNMap& cn);
+
+    /// Maximum number of distinct tumor states of segment s, or 0 when no limit applies: clonal segments are fixed,
+    /// and a limit of at least n - 1 (the number of tumor clones) cannot bind
+    static int stateLimit(const IntArray& cnstates, const CNMap& cn, const int n, const int s)
+    {
+        const int limit = segmentCnstates(cnstates, s);
+        return cn.count(s) == 0 && limit > 0 && limit < n - 1 ? limit : 0;
+    }
 
 private:
 
@@ -123,6 +147,29 @@ private:
     bool ampdelApplies(const int s) const
     {
         return _ampdel && _cn.count(s) == 0 && _ampdelExempt.count(s) == 0;
+    }
+    int stateLimit(const int s) const
+    {
+        return stateLimit(_cnstates, _cn, _n, s);
+    }
+    /// Whether any segment has a limit on its distinct tumor states
+    bool anyStateLimit() const
+    {
+        for(int s = 0; s < _m; ++s)
+        {
+            if(stateLimit(s) > 0)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+    /// Whether the model needs the binary expansion of the copy numbers: the vA/vB products and buildNext of FULL
+    /// mode, and the pairwise state limit
+    bool needsBits() const
+    {
+        return _mode == MODE_t::FULL ||
+               (_mode == MODE_t::CARCH && g_cnstatesFormulation == CNSTATES_PAIRWISE && anyStateLimit());
     }
     /// Build main common variables
     void buildVariables();
@@ -132,6 +179,12 @@ private:
     void buildConstraints();
     /// Build the constraints that depend on the chosen second objective
     void buildOptionalConstraints();
+    /// Limit segment s to `limit` tumor states through slot states numbered by first use
+    void buildSlotConstraints(const int s, const int limit);
+    /// Limit segment s to `limit` tumor states through pairwise equalities of copy-number bits (benchmarks only)
+    void buildPairwiseConstraints(const int s, const int limit);
+    /// Start the slot variables of segment s from tumor copy numbers, numbering slots by first use
+    void startSlots(const int s, const IntArray& hCA, const IntArray& hCB);
     /// Derive variable bounds from the normal clone, clonal copy numbers, fixed entries, and sample-clonal states
     void computeFixedBounds();
     /// Add explicit equalities for fixed values that conflict with another fixed value
@@ -163,8 +216,8 @@ private:
     const int _k;
     /// Maximum copy number
     const int _cmax;
-    /// Maximum number of distinct copy-number states
-    const int _d;
+    /// Maximum number of distinct tumor copy-number states of each segment (-1 for no limit)
+    const IntArray& _cnstates;
     ///
     const double _mu;
     /// Maximum cluster-weight fraction that can have a homozygous deletion
@@ -245,8 +298,12 @@ private:
     Var4Matrix _vA;
     /// Variable zB[b][t][i][p] is the product between cB[b][t][i] and u[i][p]
     Var4Matrix _vB;
-    ///
+    /// Variable z[t][i][l] = 1 iff tumor clone i of segment t takes the state of slot l
     Var3Matrix _z;
+    /// Variable sA[t][l] is the A-allele copy number of slot l of segment t (slot formulation)
+    VarMatrix _sA;
+    /// Variable sB[t][l] is the B-allele copy number of slot l of segment t (slot formulation)
+    VarMatrix _sB;
     /// Variable barcA[b][t][i][j] = 1 iff _cA[b][t][i] and _cA[b][t][j] are different
     Var4Matrix _barcIJA;
     /// Variable barcB[b][t][i][j] = 1 iff _cB[b][t][i] and _cB[b][t][j] are different

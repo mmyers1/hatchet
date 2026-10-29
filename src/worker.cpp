@@ -8,7 +8,7 @@ Worker::Worker(const DoubleMatrix& FA,
                const int k,
                const int n,
                const int cmax,
-               const int d,
+               const IntArray& cnstates,
                const double mu,
                const double maxHomdelSize,
                const int base,
@@ -33,7 +33,7 @@ Worker::Worker(const DoubleMatrix& FA,
     , _k(k)
     , _n(n)
     , _cmax(cmax)
-    , _d(d)
+    , _cnstates(cnstates)
     , _mu(mu)
     , _maxHomdelSize(maxHomdelSize)
     , _base(base)
@@ -68,13 +68,13 @@ double Worker::solve()
     bool first = true;
 
     std::pair<IntMatrix, IntMatrix> hotstart;
-    hotstart = IlpSubset::firstHotStart(_FA, _FB, _m, _k, _n, _cmax, _d, _base, _ampdel, _ampdelExempt, _cn);
+    hotstart = IlpSubset::firstHotStart(_FA, _FB, _m, _k, _n, _cmax, _cnstates, _base, _ampdel, _ampdelExempt, _cn);
     _fixedMatrix.applyCopyNumbers(hotstart.first, hotstart.second);
 
     while((iter_convergence < _iterConvergence) && (iter < _maxIter))
     {
         g_mutex.lock();
-        IlpSubset carch(_n, _m, _k, _cmax, _d, _mu, _maxHomdelSize, _base, _ampdel, _ampdelExempt, _cn, _FA, _FB, _bins, _fixedMatrix,
+        IlpSubset carch(_n, _m, _k, _cmax, _cnstates, _mu, _maxHomdelSize, _base, _ampdel, _ampdelExempt, _cn, _FA, _FB, _bins, _fixedMatrix,
                    _sampleClonal, _purities, _v);
         g_mutex.unlock();
 
@@ -98,12 +98,13 @@ double Worker::solve()
             std::lock_guard<std::mutex> lock(g_output_mutex);
             std::ofstream coordinate_out("coordinate_descence.tsv", std::ofstream::out | std::ofstream::app);
             char buf[1024];
-            snprintf(buf, 2014, "%d\t%d\t%s\t%f\t%f\t%f", _seedIndex, iter, "C", _allObjC.back(), carch.gap(), carch.runtime());
+            snprintf(buf, 1024, "%d\t%d\t%s\t%f\t%f\t%f\t%d\t%d\t%d", _seedIndex, iter, "C", _allObjC.back(), carch.gap(),
+                     carch.runtime(), carch.numConstrs(), carch.numDiscreteVars(), carch.numNonzeros());
             coordinate_out << buf << std::endl;
         }
 
         g_mutex.lock();
-        IlpSubset uarch(_n, _m, _k, _cmax, _d, _mu, _maxHomdelSize, _base, _ampdel, _ampdelExempt, _cn, _FA, _FB, _bins, _fixedMatrix,
+        IlpSubset uarch(_n, _m, _k, _cmax, _cnstates, _mu, _maxHomdelSize, _base, _ampdel, _ampdelExempt, _cn, _FA, _FB, _bins, _fixedMatrix,
                    _sampleClonal, _purities, _v);
         g_mutex.unlock();
 
@@ -131,7 +132,8 @@ double Worker::solve()
             std::lock_guard<std::mutex> lock(g_output_mutex);
             std::ofstream coordinate_out("coordinate_descence.tsv", std::ofstream::out | std::ofstream::app);
             char buf[1024];
-            snprintf(buf, 2014, "%d\t%d\t%s\t%f\t%f\t%f", _seedIndex, iter, "U", _allObjU.back(), 0.0, uarch.runtime());
+            snprintf(buf, 1024, "%d\t%d\t%s\t%f\t%f\t%f\t%d\t%d\t%d", _seedIndex, iter, "U", _allObjU.back(), 0.0,
+                     uarch.runtime(), uarch.numConstrs(), uarch.numDiscreteVars(), uarch.numNonzeros());
             coordinate_out << buf << std::endl;
         }
 

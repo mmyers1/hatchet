@@ -22,6 +22,7 @@
 #include <thread>
 #include <mutex>
 #include <random>
+#include <numeric>
 #include <ctime>
 #include <limits>
 #include <functional>
@@ -53,6 +54,15 @@ typedef enum {
     UARCH = 2
 } MODE_t;
 
+/// Formulation of the limit on distinct tumor copy-number states: slot states (default) or the earlier pairwise
+/// bit equalities, which are kept only to benchmark the two against each other
+typedef enum {
+    CNSTATES_SLOT = 0,
+    CNSTATES_PAIRWISE = 1
+} CNSTATES_FORMULATION_t;
+
+extern CNSTATES_FORMULATION_t g_cnstatesFormulation;
+
 typedef std::vector<int> IntArray;
 typedef std::vector<IntArray> IntMatrix;
 typedef std::vector<IntMatrix> Int3Matrix;
@@ -77,6 +87,12 @@ typedef std::pair<IntSet, IntSet> IntSetPair;
 typedef std::pair<int, int> CNState;
 typedef std::map<std::string, CNState> CNAssignCluster;
 typedef std::map<int, CNState> CNMap;
+
+/// Limit on the distinct tumor copy-number states of segment s in a per-segment array (-1 for no limit)
+inline int segmentCnstates(const IntArray& cnstates, const int s)
+{
+    return s >= 0 && s < static_cast<int>(cnstates.size()) ? cnstates[s] : -1;
+}
 
 int countElements(const IntMatrix arg);
 int countElements(const Int3Matrix arg);

@@ -43,7 +43,7 @@ int main(int argc, char** argv)
         int base = 1;
         bool ampdel = false;
         IntSet ampdelExempt;
-        int cnstates = -1;
+        IntArray cnstates(3, -1);
         if(argc >= 4)
         {
             const std::string scenario(argv[3]);
@@ -64,7 +64,12 @@ int main(int argc, char** argv)
             }
             else if(scenario == "cnstates")
             {
-                cnstates = 1;
+                cnstates = IntArray(3, 1);
+            }
+            else if(scenario == "cnstates-exempt")
+            {
+                cnstates = IntArray(3, 1);
+                cnstates[0] = -1;
             }
             else if(scenario == "zero-weight")
             {

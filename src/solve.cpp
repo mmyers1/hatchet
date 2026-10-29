@@ -17,6 +17,7 @@ void printSolutions(const int k, const int numSolutions, const DoubleArray& obj,
 void segmentation(const InputInstance& instance, const BBCInstance& bbc, const int n, const IntMatrix& ACN, const IntMatrix& BCN, const DoubleMatrix& U, const std::string& outprefix, const VERBOSITY_t& verbosity);
 CNMap getCNMap(const ArgParse& argparse, const InputInstance& instance);
 IntSet getAmpdelExempt(const ArgParse& argparse, const InputInstance& instance);
+IntArray getCnstates(const ArgParse& argparse, const InputInstance& instance);
 std::string printFractions(const DoubleMatrix &F, const InputInstance &instance);
 
 
@@ -70,6 +71,8 @@ int main(int argc, char** argv)
 
         CNMap cn(getCNMap(argparse, instance));
         IntSet ampdelExempt(getAmpdelExempt(argparse, instance));
+        IntArray cnstates(getCnstates(argparse, instance));
+        g_cnstatesFormulation = argparse.cnstatesFormulation();
 
         int cmax = argparse.cmax() > 0 ? argparse.cmax() : maxCeil(F);
         if(!sampleClonal.empty() && argparse.cmax() <= 0)
@@ -78,7 +81,7 @@ int main(int argc, char** argv)
         }
         if(!sampleClonal.empty())
         {
-            sampleClonal.validate(cmax, argparse.base(), argparse.forceAMPDEL(), ampdelExempt, argparse.d(), instance.w(), purities,
+            sampleClonal.validate(cmax, argparse.base(), argparse.forceAMPDEL(), ampdelExempt, cnstates, instance.w(), purities,
                                   argparse.maxHomdelSize());
         }
         log("Inferred maximum copy number:" + std::to_string(cmax), VERBOSITY_t::DEBUGGING, argparse.v());
@@ -91,12 +94,12 @@ int main(int argc, char** argv)
             if(sampleClonal.empty())
             {
                 fixedMatrix.validate(cmax, argparse.minprop(), argparse.base(), argparse.forceAMPDEL(), ampdelExempt,
-                                     argparse.d(), cn, instance.w(), argparse.maxHomdelSize());
+                                     cnstates, cn, instance.w(), argparse.maxHomdelSize());
             }
             else
             {
                 fixedMatrix.validate(cmax, argparse.minprop(), argparse.base(), argparse.forceAMPDEL(), ampdelExempt,
-                                     argparse.d(), cn, instance.w(), sampleClonal, purities, argparse.maxHomdelSize());
+                                     cnstates, cn, instance.w(), sampleClonal, purities, argparse.maxHomdelSize());
             }
         }
 
@@ -115,7 +118,7 @@ int main(int argc, char** argv)
         if(argparse.M() == SOLVE_t::BOTH)
         {
             log("Starting coordinate descent algorithm on " + std::to_string(argparse.nrSeeds()) + " seeds", VERBOSITY_t::ESSENTIAL, argparse.v());
-            CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
+            CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, cnstates, argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
                                  argparse.forceAMPDEL(), ampdelExempt, cn, fixedMatrix, sampleClonal, purities,
                                  2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1,
                                  argparse.s(), argparse.m(), argparse.v());
@@ -124,9 +127,11 @@ int main(int argc, char** argv)
             log("Objective value from coordinate descent:\t" + std::to_string(cd.getObjValue()), VERBOSITY_t::ESSENTIAL, argparse.v());
 
             log("Starting exact ILP for improving solution found by coordinate descent", VERBOSITY_t::ESSENTIAL, argparse.v());
-            IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
+            IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, cnstates, argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
                           argparse.forceAMPDEL(), ampdelExempt, cn, FA, FB, instance.w(), fixedMatrix, sampleClonal, purities, argparse.v());
             ilp.init();
+            log("ILP model size: " + std::to_string(ilp.numConstrs()) + " rows, " + std::to_string(ilp.numDiscreteVars()) +
+                " integer or binary variables, " + std::to_string(ilp.numNonzeros()) + " nonzeros", VERBOSITY_t::VERBOSE, argparse.v());
             ilp.hotStart(cd.getACN(), cd.getBCN(), cd.getU());
             ilp.solve(argparse.s(), argparse.m(), argparse.j());
 
@@ -145,11 +150,13 @@ int main(int argc, char** argv)
         } else if (argparse.M() == SOLVE_t::ILP)
         {
             log("Starting exact ILP", VERBOSITY_t::ESSENTIAL, argparse.v());
-            IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
+            IlpSubset ilp(argparse.n(), instance.m(), instance.k(), cmax, cnstates, argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
                           argparse.forceAMPDEL(), ampdelExempt, cn, FA, FB, instance.w(), fixedMatrix, sampleClonal, purities, argparse.v());
             ilp.init();
+            log("ILP model size: " + std::to_string(ilp.numConstrs()) + " rows, " + std::to_string(ilp.numDiscreteVars()) +
+                " integer or binary variables, " + std::to_string(ilp.numNonzeros()) + " nonzeros", VERBOSITY_t::VERBOSE, argparse.v());
             std::pair<IntMatrix, IntMatrix> hotstart;
-            hotstart = IlpSubset::firstHotStart(FA, FB, instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.base(), argparse.forceAMPDEL(), ampdelExempt, cn);
+            hotstart = IlpSubset::firstHotStart(FA, FB, instance.m(), instance.k(), argparse.n(), cmax, cnstates, argparse.base(), argparse.forceAMPDEL(), ampdelExempt, cn);
             fixedMatrix.applyCopyNumbers(hotstart.first, hotstart.second);
             ilp.hotStart(hotstart.first, hotstart.second);
             ilp.solve(argparse.s(), argparse.m(), argparse.j());
@@ -169,7 +176,7 @@ int main(int argc, char** argv)
         } else if (argparse.M() == SOLVE_t::CD)
         {
             log("Starting coordinate descent algorithm on " + std::to_string(argparse.nrSeeds()) + " seeds", VERBOSITY_t::ESSENTIAL, argparse.v());
-            CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, argparse.d(), argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
+            CoordinateDescent cd(FA, FB, instance.w(), instance.m(), instance.k(), argparse.n(), cmax, cnstates, argparse.minprop(), argparse.maxHomdelSize(), argparse.base(),
                                  argparse.forceAMPDEL(), ampdelExempt, cn, fixedMatrix, sampleClonal, purities,
                                  2, argparse.maxiter(), argparse.nrSeeds(), argparse.j(), 1,
                                  argparse.s(), argparse.m(), argparse.v());
@@ -507,6 +514,27 @@ CNMap getCNMap(const ArgParse& argparse, const InputInstance& instance)
         cnmap.emplace(idx, CNState(cn.second.first, cn.second.second));
     }
     return cnmap;
+}
+
+/// Per-segment limit on distinct tumor copy-number states (-1 for no limit): -d, except for clusters exempted with
+/// --cnstates-exempt or given their own limit with --cluster-cnstates
+IntArray getCnstates(const ArgParse& argparse, const InputInstance& instance)
+{
+    IntArray cnstates(instance.m(), argparse.d() > 0 ? argparse.d() : -1);
+    std::map<std::string, int> limits(argparse.clusterCnstates());
+    for(auto const& cluster : argparse.cnstatesExempt())
+    {
+        limits.emplace(cluster, -1);
+    }
+    for(auto const& limit : limits)
+    {
+        if(instance.clusters().find(limit.first) == instance.clusters().end())
+        {
+            throw "The cnstates cluster with ID " + limit.first + " has not been found in the input seg file!";
+        }
+        cnstates[instance.clusterToIdx().at(limit.first)] = limit.second;
+    }
+    return cnstates;
 }
 
 IntSet getAmpdelExempt(const ArgParse& argparse, const InputInstance& instance)

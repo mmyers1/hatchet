@@ -25,6 +25,7 @@ class ILPSubset:
         sample_clonal=None,
         max_homdel_size=0.005,
         ampdel_exempt=None,
+        cluster_cnstates=None,
     ):
 
         # Each ILPSubset maintains its own data, so make a deep-copy of passed-in DataFrames
@@ -53,6 +54,8 @@ class ILPSubset:
         self.sample_clonal = sample_clonal
         self.max_homdel_size = max_homdel_size
         self.ampdel_exempt = frozenset(ampdel_exempt or ())
+        # cluster ID -> its own limit on distinct tumor states (None for no limit), overriding d
+        self.cluster_cnstates = dict(cluster_cnstates or {})
 
         self.tol = 0.001
 
@@ -88,6 +91,7 @@ class ILPSubset:
             sample_clonal=self.sample_clonal,
             max_homdel_size=self.max_homdel_size,
             ampdel_exempt=self.ampdel_exempt,
+            cluster_cnstates=self.cluster_cnstates,
         )
 
     def __str__(self):
@@ -118,6 +122,17 @@ class ILPSubset:
     def ampdel_applies(self, cluster_id):
         """Whether the amp-del constraint covers this cluster: not clonal and not exempted by the user."""
         return self.ampdel and cluster_id not in self.copy_numbers and cluster_id not in self.ampdel_exempt
+
+    def state_limit(self, cluster_id):
+        """Maximum number of distinct tumor (A, B) states of a cluster, or 0 when no limit applies.
+
+        A cluster's own entry in cluster_cnstates (None for no limit) overrides the global limit d. Clonal clusters are
+        fixed, and a limit of at least n - 1 (the number of tumor clones) cannot bind, so neither gets a limit.
+        """
+        limit = self.cluster_cnstates.get(cluster_id, self.d)
+        if limit is None or limit <= 0 or limit >= self.n - 1 or cluster_id in self.copy_numbers:
+            return 0
+        return limit
 
     @staticmethod
     def symmCoeff(i):
@@ -151,7 +166,6 @@ class ILPSubset:
         cn_max = self.cn_max
         copy_numbers = self.copy_numbers
         mode_t = self.mode
-        d = self.d
         _M = self.M
         _base = self.base
         bounds, conflicts = self.compute_fixed_bounds()
@@ -200,7 +214,7 @@ class ILPSubset:
 
         bitcA = {}
         bitcB = {}
-        if (mode_t == 'FULL') or (d > 0 and mode_t == 'CARCH'):
+        if mode_t == 'FULL':
             for _b in range(_M):
                 for _m in range(m):
                     for _n in range(n):
@@ -249,15 +263,6 @@ class ILPSubset:
                     x[(_n, _k)] = pe.Var(domain=pe.Binary)
                     model.add_component(f'x_{_n + 1}_{_k + 1}', x[(_n, _k)])
         self._x = x
-
-        # buildOptionalVariables
-        z = {}
-        if (mode_t in ('FULL', 'CARCH')) and d > 0:
-            for _m in range(self.m):
-                for _n in range(1, self.n):
-                    for _d in range(d):
-                        z[(_m, _n, _d)] = pe.Var(bounds=(0, 1), domain=pe.Binary)
-                        model.add_component(f'z_{_m + 1}_{_n + 1}_{_d + 1}', z[(_m, _n, _d)])
 
         # CONSTRAINTS
         model.constraints = pe.ConstraintList()
@@ -312,7 +317,7 @@ class ILPSubset:
                             _sum += bitcA[(_b, _m, _n)] + bitcB[(_b, _m, _n)]
                     model.constraints.add(_sum >= self.u[_n][_k])
 
-        if (mode_t == 'FULL') or (d > 0 and mode_t == 'CARCH'):
+        if mode_t == 'FULL':
             for _m in range(m):
                 for _n in range(n):
                     sum_a = 0
@@ -376,40 +381,7 @@ class ILPSubset:
 
         self.apply_sample_clonal_constraints(model, x)
 
-        # buildOptionalConstraints
-        if (mode_t in ('FULL', 'CARCH')) and d > 0:
-            for _m in range(self.m):
-                for _n in range(1, self.n):
-                    _sum = 0
-                    for _d in range(self.d):
-                        _sum += z[(_m, _n, _d)]
-                    model.constraints.add(_sum == 1)
-
-            for _m in range(self.m):
-                for _M in range(self.M):
-                    for _d in range(d):
-                        for _i in range(1, self.n - 1):
-                            for _j in range(1, self.n):
-                                model.constraints.add(
-                                    bitcA[(_M, _m, _i)] - bitcA[(_M, _m, _j)] <= 2 - z[(_m, _i, _d)] - z[(_m, _j, _d)]
-                                )
-                                model.constraints.add(
-                                    bitcA[(_M, _m, _j)] - bitcA[(_M, _m, _i)] <= 2 - z[(_m, _i, _d)] - z[(_m, _j, _d)]
-                                )
-                                model.constraints.add(
-                                    bitcB[(_M, _m, _i)] - bitcB[(_M, _m, _j)] <= 2 - z[(_m, _i, _d)] - z[(_m, _j, _d)]
-                                )
-                                model.constraints.add(
-                                    bitcB[(_M, _m, _j)] - bitcB[(_M, _m, _i)] <= 2 - z[(_m, _i, _d)] - z[(_m, _j, _d)]
-                                )
-
-            for _m in range(self.m):
-                for _d in range(d - 1):
-                    _sum_l = _sum_l1 = 0
-                    for _n in range(1, self.n):
-                        _sum_l += z[(_m, _n, _d)] * self.symmCoeff(_n)
-                        _sum_l1 += z[(_m, _n, _d + 1)] * self.symmCoeff(_n)
-                        model.constraints.add(_sum_l <= _sum_l1)
+        self.build_cnstates_constraints(model)
 
         self.apply_fixed_value_conflicts(model, conflicts)
 
@@ -528,6 +500,67 @@ class ILPSubset:
                         self.cA[cluster_index][clone_index] + self.cB[cluster_index][clone_index] >= 1
                     )
 
+    def build_cnstates_constraints(self, model):
+        """Limit the distinct tumor states of every limited cluster (see state_limit) with slot states.
+
+        Each tumor clone takes the state (sA, sB) of the one slot whose z is 1. Slots are numbered in order of first
+        use (restricted growth), which removes all slot symmetry: tumor clone t may only use slots l < t, and slot l
+        only once an earlier clone uses slot l - 1. Copy-number bits are not needed, so CARCH models stay small.
+        """
+        model.cnstates_constraints = pe.ConstraintList()
+        self._z, self._sA, self._sB, self._limits = {}, {}, {}, {}
+        if self.mode not in ('FULL', 'CARCH'):
+            return
+
+        for _m, cluster_id in enumerate(self.cluster_ids):
+            limit = self.state_limit(cluster_id)
+            if limit == 0:
+                continue
+            self._limits[_m] = limit
+            ub = self.copy_number_upper_bound(cluster_id)
+            for _l in range(limit):
+                # continuous: a used slot equals an integer copy number, and an unused slot needs no branching
+                self._sA[(_m, _l)] = pe.Var(bounds=(0, ub), domain=pe.Reals)
+                model.add_component(f'sA_{_m + 1}_{_l + 1}', self._sA[(_m, _l)])
+                self._sB[(_m, _l)] = pe.Var(bounds=(0, ub), domain=pe.Reals)
+                model.add_component(f'sB_{_m + 1}_{_l + 1}', self._sB[(_m, _l)])
+            for _n in range(1, self.n):
+                for _l in range(min(_n, limit)):
+                    self._z[(_m, _n, _l)] = pe.Var(domain=pe.Binary)
+                    model.add_component(f'z_{_m + 1}_{_n + 1}_{_l + 1}', self._z[(_m, _n, _l)])
+
+            for _n in range(1, self.n):
+                slots = range(min(_n, limit))
+                model.cnstates_constraints.add(sum(self._z[(_m, _n, _l)] for _l in slots) == 1)
+                for _l in slots:
+                    away = ub * (1 - self._z[(_m, _n, _l)])
+                    model.cnstates_constraints.add(self.cA[_m][_n] - self._sA[(_m, _l)] <= away)
+                    model.cnstates_constraints.add(self._sA[(_m, _l)] - self.cA[_m][_n] <= away)
+                    model.cnstates_constraints.add(self.cB[_m][_n] - self._sB[(_m, _l)] <= away)
+                    model.cnstates_constraints.add(self._sB[(_m, _l)] - self.cB[_m][_n] <= away)
+                    if _l > 0:
+                        model.cnstates_constraints.add(
+                            self._z[(_m, _n, _l)] <= sum(self._z[(_m, _t, _l - 1)] for _t in range(_l, _n))
+                        )
+
+    def start_cnstates(self, cluster_index, start_a, start_b):
+        """Start the slot variables of a limited cluster from tumor copy numbers, numbering slots by first use."""
+        limit = self._limits.get(cluster_index, 0)
+        if limit == 0:
+            return
+        slots = {}
+        for _n in range(1, self.n):
+            slots.setdefault((start_a[_n], start_b[_n]), len(slots))
+        if len(slots) > limit:
+            return  # e.g. a fixed-matrix overlay added states; leave the slots to the solver
+        for (value_a, value_b), _l in slots.items():
+            self._sA[(cluster_index, _l)].value = value_a
+            self._sB[(cluster_index, _l)].value = value_b
+        for _n in range(1, self.n):
+            slot = slots[(start_a[_n], start_b[_n])]
+            for _l in range(min(_n, limit)):
+                self._z[(cluster_index, _n, _l)].value = int(_l == slot)
+
     def apply_fixed_value_conflicts(self, model, conflicts):
         model.fixed_value_conflicts = pe.ConstraintList()
         variables = {'A': self.cA, 'B': self.cB, 'U': self.u}
@@ -565,23 +598,22 @@ class ILPSubset:
 
     def first_hot_start(self):
 
-        if self.d > 0:
-            targetA = np.empty((self.m, self.d))
-            targetB = np.empty_like(targetA)
-            for _m in range(self.m):
-                targetA[_m, :] = np.random.choice(self.f_a.iloc[_m].values, self.d, replace=False)
-                targetB[_m, :] = np.random.choice(self.f_b.iloc[_m].values, self.d, replace=False)
-            targetA = targetA.round()
-            targetB = targetB.round()
-        else:
-            targetA = np.round(self.f_a.values)
-            targetB = np.round(self.f_b.values)
+        targetA = np.round(self.f_a.values)
+        targetB = np.round(self.f_b.values)
 
         hcA = np.zeros((self.m, self.n))
         hcB = np.zeros((self.m, self.n))
 
         for _m in range(self.m):
             cluster_id = self.f_a.index[_m]
+            # Tumor clone i starts from sample i % min(n, k). Under a state limit, clone i starts from the
+            # ((i - 1) % limit)-th of `limit` random samples instead, so the start has at most `limit` states.
+            limit = self.state_limit(cluster_id)
+            if limit > 0:
+                chosen = np.random.choice(self.k, limit, replace=limit > self.k)
+                start_samples = [None] + [chosen[(_n - 1) % limit] for _n in range(1, self.n)]
+            else:
+                start_samples = [_n % min(self.n, self.k) for _n in range(self.n)]
 
             adA = 0
             adB = 0
@@ -594,9 +626,8 @@ class ILPSubset:
                         hcA[_m][_n] = self.copy_numbers[cluster_id][0]
                         hcB[_m][_n] = self.copy_numbers[cluster_id][1]
                     else:
-                        mod = min(self.n, self.k)
-                        a = min(targetA[_m][_n % mod], self.cn_max)
-                        b = min(targetB[_m][_n % mod], self.cn_max)
+                        a = min(targetA[_m][start_samples[_n]], self.cn_max)
+                        b = min(targetB[_m][start_samples[_n]], self.cn_max)
 
                         if self.ampdel_applies(cluster_id):
                             base = self.base
@@ -657,6 +688,7 @@ class ILPSubset:
             if _m in self._adA:
                 self._adA[_m].value = int(any(value > self.base for value in start_a[1:]))
                 self._adB[_m].value = int(any(value > self.base for value in start_b[1:]))
+            self.start_cnstates(_m, start_a, start_b)
 
         if u is not None and self.mode == 'FULL':
             for _n in range(self.n):
@@ -968,6 +1000,7 @@ class ILPSubsetSplit(ILPSubset):
         w=None,
         max_homdel_size=0.005,
         ampdel_exempt=None,
+        cluster_cnstates=None,
     ):
 
         # Each ILPSubset maintains its own data, so make a deep-copy of passed-in DataFrames
@@ -1003,6 +1036,8 @@ class ILPSubsetSplit(ILPSubset):
         self.sample_clonal = sample_clonal
         self.max_homdel_size = max_homdel_size
         self.ampdel_exempt = frozenset(ampdel_exempt or ())
+        # cluster ID -> its own limit on distinct tumor states (None for no limit), overriding d
+        self.cluster_cnstates = dict(cluster_cnstates or {})
 
         self.tol = 0.001
 
@@ -1041,6 +1076,7 @@ class ILPSubsetSplit(ILPSubset):
             w=self.w,
             max_homdel_size=self.max_homdel_size,
             ampdel_exempt=self.ampdel_exempt,
+            cluster_cnstates=self.cluster_cnstates,
         )
 
     def create_model(self, pprint=False):
@@ -1050,7 +1086,6 @@ class ILPSubsetSplit(ILPSubset):
         cn_max = self.cn_max
         copy_numbers = self.copy_numbers
         mode_t = self.mode
-        d = self.d
         _M = self.M
         _base = self.base
         bounds, conflicts = self.compute_fixed_bounds()
@@ -1103,7 +1138,7 @@ class ILPSubsetSplit(ILPSubset):
 
         bitcA = {}
         bitcB = {}
-        if (mode_t == 'FULL') or (d > 0 and mode_t == 'CARCH'):
+        if mode_t == 'FULL':
             for _b in range(_M):
                 for _m in range(m):
                     for _n in range(n):
@@ -1152,15 +1187,6 @@ class ILPSubsetSplit(ILPSubset):
                     x[(_n, _k)] = pe.Var(domain=pe.Binary)
                     model.add_component(f'x_{_n + 1}_{_k + 1}', x[(_n, _k)])
         self._x = x
-
-        # buildOptionalVariables
-        z = {}
-        if (mode_t in ('FULL', 'CARCH')) and d > 0:
-            for _m in range(self.m):
-                for _n in range(1, self.n):
-                    for _d in range(d):
-                        z[(_m, _n, _d)] = pe.Var(bounds=(0, 1), domain=pe.Binary)
-                        model.add_component(f'z_{_m + 1}_{_n + 1}_{_d + 1}', z[(_m, _n, _d)])
 
         # CONSTRAINTS
         model.constraints = pe.ConstraintList()
@@ -1221,7 +1247,7 @@ class ILPSubsetSplit(ILPSubset):
                             _sum += bitcA[(_b, _m, _n)] + bitcB[(_b, _m, _n)]
                     model.constraints.add(_sum >= self.u[_n][_k])
 
-        if (mode_t == 'FULL') or (d > 0 and mode_t == 'CARCH'):
+        if mode_t == 'FULL':
             for _m in range(m):
                 for _n in range(n):
                     sum_a = 0
@@ -1285,40 +1311,7 @@ class ILPSubsetSplit(ILPSubset):
 
         self.apply_sample_clonal_constraints(model, x)
 
-        # buildOptionalConstraints
-        if (mode_t in ('FULL', 'CARCH')) and d > 0:
-            for _m in range(self.m):
-                for _n in range(1, self.n):
-                    _sum = 0
-                    for _d in range(self.d):
-                        _sum += z[(_m, _n, _d)]
-                    model.constraints.add(_sum == 1)
-
-            for _m in range(self.m):
-                for _M in range(self.M):
-                    for _d in range(d):
-                        for _i in range(1, self.n - 1):
-                            for _j in range(1, self.n):
-                                model.constraints.add(
-                                    bitcA[(_M, _m, _i)] - bitcA[(_M, _m, _j)] <= 2 - z[(_m, _i, _d)] - z[(_m, _j, _d)]
-                                )
-                                model.constraints.add(
-                                    bitcA[(_M, _m, _j)] - bitcA[(_M, _m, _i)] <= 2 - z[(_m, _i, _d)] - z[(_m, _j, _d)]
-                                )
-                                model.constraints.add(
-                                    bitcB[(_M, _m, _i)] - bitcB[(_M, _m, _j)] <= 2 - z[(_m, _i, _d)] - z[(_m, _j, _d)]
-                                )
-                                model.constraints.add(
-                                    bitcB[(_M, _m, _j)] - bitcB[(_M, _m, _i)] <= 2 - z[(_m, _i, _d)] - z[(_m, _j, _d)]
-                                )
-
-            for _m in range(self.m):
-                for _d in range(d - 1):
-                    _sum_l = _sum_l1 = 0
-                    for _n in range(1, self.n):
-                        _sum_l += z[(_m, _n, _d)] * self.symmCoeff(_n)
-                        _sum_l1 += z[(_m, _n, _d + 1)] * self.symmCoeff(_n)
-                        model.constraints.add(_sum_l <= _sum_l1)
+        self.build_cnstates_constraints(model)
 
         self.apply_fixed_value_conflicts(model, conflicts)
 

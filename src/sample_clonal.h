@@ -60,7 +60,7 @@ public:
                   const int base,
                   const bool ampdel,
                   const IntSet& ampdelExempt,
-                  const int cnstates,
+                  const IntArray& cnstates,
                   const DoubleArray& weights,
                   const DoubleArray& purities,
                   const double maxHomdelSize) const;

@@ -31,6 +31,9 @@ ArgParse::ArgParse(int argc, char** argv)
     , _baseSpecified(false)
     , _f(false)
     , _ampdelExempt()
+    , _cnstatesExempt()
+    , _clusterCnstates()
+    , _cnstatesFormulation(CNSTATES_SLOT)
     , _args()
     , _required()
     , _optional()
@@ -54,6 +57,9 @@ ArgParse::ArgParse(int argc, char** argv)
     _args.insert("-t");
     _args.insert("-f");
     _args.insert("--ampdel-exempt");
+    _args.insert("--cnstates-exempt");
+    _args.insert("--cluster-cnstates");
+    _args.insert("--cnstates-formulation");
     _args.insert("-F");
     _args.insert("-S");
     _args.insert("-b");
@@ -79,6 +85,9 @@ ArgParse::ArgParse(int argc, char** argv)
     _optional["-t"] = false;
     _optional["-f"] = false;
     _optional["--ampdel-exempt"] = false;
+    _optional["--cnstates-exempt"] = false;
+    _optional["--cluster-cnstates"] = false;
+    _optional["--cnstates-formulation"] = false;
     _optional["-F"] = false;
     _optional["-S"] = false;
     _optional["-b"] = false;
@@ -101,6 +110,14 @@ ArgParse::ArgParse(int argc, char** argv)
     {
         throw "Amp-del exempt clusters --ampdel-exempt require the amp-del constraint -f!";
     }
+    if(!_cnstatesExempt.empty() && !_clusterCnstates.empty())
+    {
+        throw "Use only one of --cnstates-exempt and --cluster-cnstates!";
+    }
+    if(!_cnstatesExempt.empty() && !_optional.at("-d"))
+    {
+        throw "Clusters exempt with --cnstates-exempt require a global -d limit!";
+    }
 
     if(!_optional.at("-o"))
     {
@@ -118,12 +135,14 @@ std::string ArgParse::help()
 {
     std::stringstream res;
     res << "\033[96m" << "\033[1m" << "USAGE:" << "\033[0m" << "\033[96m" << std::endl;
-    res << "\t./solve input -n INT [-e INT] [-j INT] [-m INT] [-s INT] [--max-homdel-size FLOAT] [-c COPYNUMBERS] [-f [--ampdel-exempt CLUSTERS]] [-F FIXED-MATRIX] [-S SAMPLE-CLONAL -b BASE] [-v] [-h]" << std::endl;
+    res << "\t./solve input -n INT [-d INT [--cnstates-exempt CLUSTERS]] [--cluster-cnstates LIMITS] [-e INT] [-j INT] [-m INT] [-s INT] [--max-homdel-size FLOAT] [-c COPYNUMBERS] [-f [--ampdel-exempt CLUSTERS]] [-F FIXED-MATRIX] [-S SAMPLE-CLONAL -b BASE] [-v] [-h]" << std::endl;
     res << "\033[96m" << "\033[1m" << "WHERE:" << "\033[0m" << "\033[96m" << std::endl;
     res << "\tinput PREFIX-INPUT\n\t\tCommon prefix for the input files .seg and .bbc (required)" << std::endl;
     res << "\t-n INT-NUMCLONES\n\t\tNumber of tumor clones to infer (required)" << std::endl;
     res << "\t-c COPYNUBERS 'ID-CLUSTER:INT-COPYNUMBER [, ID-CLUSTER:INT-COPYNUMBER]'\n\t\tClonal copy numbers for one or two clusters in the input. When the copy number for only one cluster is provided, its copy number must be equal to 2 as it corresponds to the diploid cluster.\n\t\tThe format of copy numbers is 'ID-CLUSTER:INT-COPYNUMBER [, ID-CLUSTER:INT-COPYNUMBER]' (default: diploid cluster automatically infferred)" << std::endl;
-    res << "\t-d INT-MAXCNSTATES\n\t\tMaximum number of copy number states (default: 3)" << std::endl;
+    res << "\t-d INT-MAXCNSTATES\n\t\tMaximum number of distinct tumor copy-number states of each cluster (default: no limit)" << std::endl;
+    res << "\t--cnstates-exempt CLUSTERS\n\t\tComma-separated cluster IDs exempt from -d, which may take up to one state per tumor clone (default: none)" << std::endl;
+    res << "\t--cluster-cnstates LIMITS\n\t\tComma-separated ID:INT pairs giving clusters their own limit on distinct tumor copy-number states, overriding -d; cannot be combined with --cnstates-exempt (default: none)" << std::endl;
     res << "\t-e INT-MAXCOPYNUMBER\n\t\tMaximum integer copy number (default: inferred from fractions)" << std::endl;
     res << "\t-j INT-JOBS\n\t\tNumber of parallel jobs (default: maximum number of available processors)" << std::endl;
     res << "\t-p SEEDS\n\t\tNumber of seeds for coordinate descent (default: 400)" << std::endl;
@@ -161,6 +180,19 @@ std::string ArgParse::toString()
     res << std::endl;
     res << "\tHelp message:  " << _h << std::endl;
     res << "\tMaximum number of copy-number states:  " << _d << std::endl;
+    res << "\tCopy-number state exempt clusters:  ";
+    for(auto const& cluster : _cnstatesExempt)
+    {
+        res << cluster << " ";
+    }
+    res << (_cnstatesExempt.empty() ? "none" : "") << std::endl;
+    res << "\tCluster-specific copy-number state limits:  ";
+    for(auto const& limit : _clusterCnstates)
+    {
+        res << limit.first << ":" << limit.second << " ";
+    }
+    res << (_clusterCnstates.empty() ? "none" : "") << std::endl;
+    res << "\tCopy-number state formulation:  " << (_cnstatesFormulation == CNSTATES_SLOT ? "slot" : "pairwise") << std::endl;
     res << "\tMaximum integer copy number:  " << _e << std::endl;
     res << "\tNumber of jobs:  " << _j << std::endl;
     res << "\tNumber of seeds:  " << _p << std::endl;
@@ -450,6 +482,75 @@ void ArgParse::parseOptional(const std::string &arg, const std::string &value)
             throw "No cluster IDs were given to --ampdel-exempt!";
         }
         (*_optional.find("--ampdel-exempt")).second = true;
+    } else if (arg == "--cnstates-exempt") {
+        if((*_optional.find("--cnstates-exempt")).second)
+        {
+            throw "Multiple --cnstates-exempt arguments found!";
+        }
+        for(auto const& token : split(value, ','))
+        {
+            const std::string cluster = trim(token);
+            if(!cluster.empty())
+            {
+                _cnstatesExempt.insert(cluster);
+            }
+        }
+        if(_cnstatesExempt.empty())
+        {
+            throw "No cluster IDs were given to --cnstates-exempt!";
+        }
+        (*_optional.find("--cnstates-exempt")).second = true;
+    } else if (arg == "--cluster-cnstates") {
+        if((*_optional.find("--cluster-cnstates")).second)
+        {
+            throw "Multiple --cluster-cnstates arguments found!";
+        }
+        for(auto const& token : split(value, ','))
+        {
+            const std::string pair = trim(token);
+            if(pair.empty())
+            {
+                continue;
+            }
+            const size_t colon = pair.rfind(':');
+            const std::string cluster = colon == std::string::npos ? "" : trim(pair.substr(0, colon));
+            const std::string limit = colon == std::string::npos ? "" : trim(pair.substr(colon + 1));
+            if(cluster.empty() || limit.empty() || !checkInt(limit))
+            {
+                throw "--cluster-cnstates entries must be ID:INT pairs, not \"" + pair + "\"!";
+            }
+            if(std::atoi(limit.c_str()) <= 0)
+            {
+                throw "The --cluster-cnstates limit of cluster " + cluster + " must be a positive integer!";
+            }
+            if(!_clusterCnstates.emplace(cluster, std::atoi(limit.c_str())).second)
+            {
+                throw "Cluster " + cluster + " is given more than once to --cluster-cnstates!";
+            }
+        }
+        if(_clusterCnstates.empty())
+        {
+            throw "No cluster IDs were given to --cluster-cnstates!";
+        }
+        (*_optional.find("--cluster-cnstates")).second = true;
+    } else if (arg == "--cnstates-formulation") {
+        if((*_optional.find("--cnstates-formulation")).second)
+        {
+            throw "Multiple --cnstates-formulation arguments found!";
+        }
+        if(value == "slot")
+        {
+            _cnstatesFormulation = CNSTATES_SLOT;
+        }
+        else if(value == "pairwise")
+        {
+            _cnstatesFormulation = CNSTATES_PAIRWISE;
+        }
+        else
+        {
+            throw "--cnstates-formulation must be pairwise or slot!";
+        }
+        (*_optional.find("--cnstates-formulation")).second = true;
     } else if (arg == "-F") {
         if((*_optional.find("-F")).second)
         {

@@ -16,7 +16,7 @@ public:
            const int k,
            const int n,
            const int cmax,
-           const int d,
+           const IntArray& cnstates,
            const double mu,
            const double maxHomdelSize,
            const int base,
@@ -69,7 +69,8 @@ private:
     ///
     const int _cmax;
     ///
-    const int _d;
+    /// Maximum number of distinct tumor copy-number states of each segment (-1 for no limit)
+    const IntArray& _cnstates;
     ///
     const double _mu;
     /// Maximum cluster-weight fraction that can have a homozygous deletion

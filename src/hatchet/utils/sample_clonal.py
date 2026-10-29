@@ -354,6 +354,7 @@ def validate_sample_clonal_constraints(
     tol=0.001,
     max_homdel_size=0.005,
     ampdel_exempt=None,
+    cluster_cnstates=None,
 ):
     positive_entries = [entry for entry in resolved.entries if purities[entry.sample_index] > tol]
     ampdel_exempt = {str(cluster_id) for cluster_id in (ampdel_exempt or ())}
@@ -407,16 +408,19 @@ def validate_sample_clonal_constraints(
                         f'for cluster {str(resolved.cluster_ids[cluster_index])!r} relative to base {base}',
                     )
 
-    if cnstates is not None and cnstates > 0:
-        for cluster_index, entries in entries_by_cluster.items():
+    # a cluster's own limit (None for no limit) overrides cnstates
+    cluster_cnstates = {str(cluster_id): limit for cluster_id, limit in (cluster_cnstates or {}).items()}
+    for cluster_index, entries in entries_by_cluster.items():
+        limit = cluster_cnstates.get(str(resolved.cluster_ids[cluster_index]), cnstates)
+        if limit is not None and limit > 0:
             states = {(entry.cn_a, entry.cn_b) for entry in entries}
-            if len(states) > cnstates:
+            if len(states) > limit:
                 error_entry = max(entries, key=lambda entry: entry.source_entry.line_number)
                 raise _format_error(
                     resolved.source,
                     error_entry.source_entry.line_number,
                     f'sample-clonal states for cluster {str(resolved.cluster_ids[cluster_index])!r} '
-                    f'require at least {len(states)} copy-number states, exceeding cnstates {cnstates}',
+                    f'require at least {len(states)} copy-number states, exceeding cnstates {limit}',
                 )
 
 

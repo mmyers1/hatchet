@@ -85,6 +85,7 @@ class CoordinateDescent:
         sample_clonal=None,
         max_homdel_size=0.005,
         ampdel_exempt=None,
+        cluster_cnstates=None,
     ):
         # ilp attribute used here as a convenient storage container for properties
         self.ilp = ILPSubset(
@@ -103,6 +104,7 @@ class CoordinateDescent:
             sample_clonal=sample_clonal,
             max_homdel_size=max_homdel_size,
             ampdel_exempt=ampdel_exempt,
+            cluster_cnstates=cluster_cnstates,
         )
         # Building the model here is not strictly necessary, as, during execution,
         #   self.carch and c.uarch will copy self.ilp and create+run those models.
@@ -174,6 +176,7 @@ class CoordinateDescentSplit(CoordinateDescent):
         w=None,
         max_homdel_size=0.005,
         ampdel_exempt=None,
+        cluster_cnstates=None,
     ):
         # ilp attribute used here as a convenient storage container for properties
         self.ilp = ILPSubsetSplit(
@@ -195,6 +198,7 @@ class CoordinateDescentSplit(CoordinateDescent):
             w=w,
             max_homdel_size=max_homdel_size,
             ampdel_exempt=ampdel_exempt,
+            cluster_cnstates=cluster_cnstates,
         )
         # Building the model here is not strictly necessary, as, during execution,
         #   self.carch and c.uarch will copy self.ilp and create+run those models.

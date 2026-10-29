@@ -1,5 +1,7 @@
 # Per-Cluster Exemptions From the Amp-Del Constraint (`--ampdel-exempt`)
 
+> 2026-10-25: the benchmark and verification scripts of this log moved to `benchmarks/2026-10-22-ampdel-exempt-clusters/` (shared `measure.py`: `benchmarks/common/measure.py`); job logs stay in `ai-logs/`. See `ai-logs/2026-10-25-CNSTATES_CLUSTER_LIMITS.md`.
+
 ## Status
 
 - Overall: Implemented and tested in both solvers. The user ran the resource benchmark on real data with the
@@ -125,9 +127,9 @@ native solver from the reinstalled `hatchet-test` package, and one run per confi
 | exempt16 (1–16) | 3:48.7 (228.7 s) | −16.1% | 452.6 | 114.590693 | 7 (IDs 5, 8, 9, 10, 12, 13, 14) | 0.134 |
 | noampdel | 3:34.5 (214.5 s) | −21.3% | 453.6 | 104.194705 | 120 | 0.499 |
 
-Amp+del usage was counted with `ai-logs/2026-10-22-AMPDEL_EXEMPT_CLUSTERS/ampdel_usage.py`: an allele uses amp+del if
+Amp+del usage was counted with `benchmarks/2026-10-22-ampdel-exempt-clusters/ampdel_usage.py`: an allele uses amp+del if
 its values across tumor clones fall both below and above base 1. Command:
-`conda run -n hatchet-test python -I ai-logs/2026-10-22-AMPDEL_EXEMPT_CLUSTERS/ampdel_usage.py <bench dir> 1`.
+`conda run -n hatchet-test python -I benchmarks/2026-10-22-ampdel-exempt-clusters/ampdel_usage.py <bench dir> 1`.
 
 Interpretation:
 - **Memory:** unchanged, as predicted. Peak RSS spans 451.8–453.6 MB (0.4%).
@@ -247,7 +249,7 @@ Invalid use fails early:
     scenario.
 15. `docs/source/doc_compute_cn.md`: a table row and a paragraph covering semantics, the ini key, both solvers and
     the resource or model-selection impact.
-16. `ai-logs/2026-10-22-AMPDEL_EXEMPT_CLUSTERS/ampdel_usage.py`: reproducible script behind the benchmark's amp+del
+16. `benchmarks/2026-10-22-ampdel-exempt-clusters/ampdel_usage.py`: reproducible script behind the benchmark's amp+del
     usage columns.
 
 ## Tasks prevented by sandbox-limited file access

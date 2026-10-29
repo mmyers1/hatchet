@@ -51,7 +51,9 @@ def step_times(path):
     tsv = os.path.join(path, 'coordinate_descence.tsv')
     if not os.path.exists(tsv) or os.path.getsize(tsv) == 0:
         return {}
-    steps = pd.read_csv(tsv, sep='\t', header=None, names=['seed', 'iteration', 'step', 'obj', 'gap', 'runtime'])
+    # newer native solvers append model-size columns; only the first six are used here
+    steps = pd.read_csv(tsv, sep='\t', header=None).iloc[:, :6]
+    steps.columns = ['seed', 'iteration', 'step', 'obj', 'gap', 'runtime']
     stats = {}
     for step, group in steps.groupby('step'):
         stats[step] = (len(group), group['runtime'].sum(), group['runtime'].mean())

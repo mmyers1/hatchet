@@ -7,7 +7,7 @@ CoordinateDescent::CoordinateDescent(const DoubleMatrix& FA,
                                      const int k,
                                      const int n,
                                      const int cmax,
-                                     const int d,
+                                     const IntArray& cnstates,
                                      const double mu,
                                      const double maxHomdelSize,
                                      const int base,
@@ -32,7 +32,7 @@ CoordinateDescent::CoordinateDescent(const DoubleMatrix& FA,
     , _k(k)
     , _n(n)
     , _cmax(cmax)
-    , _d(d)
+    , _cnstates(cnstates)
     , _mu(mu)
     , _maxHomdelSize(maxHomdelSize)
     , _base(base)
@@ -411,7 +411,7 @@ void CoordinateDescent::runWorker()
         }
         std::this_thread::sleep_for(std::chrono::seconds(1));
         if(seed > -1) {
-            Worker worker(_FA, _FB, _bins, _m, _k, _n, _cmax, _d, _mu, _maxHomdelSize, _base, _ampdel, _ampdelExempt, _cn, _fixedMatrix,
+            Worker worker(_FA, _FB, _bins, _m, _k, _n, _cmax, _cnstates, _mu, _maxHomdelSize, _base, _ampdel, _ampdelExempt, _cn, _fixedMatrix,
                           _sampleClonal, _purities,
                           _iterConvergence, _maxIter, _timeLimit, _memoryLimit, _nrILPthreads, _seeds[seed], seed, _v);
             double obj = worker.solve();

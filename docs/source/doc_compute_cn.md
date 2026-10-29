@@ -110,7 +110,9 @@ hatchet solves a constrained and distance-based variant of the factorization tha
 | `--max-homdel-size` | Maximum cluster size with a homozygous deletion | Maximum fraction of total covered cluster weight that may receive tumor copy number `(0, 0)`. Clusters at or above the threshold must retain at least one copy in every tumor clone. | 0.005 |
 | `-f`, `--noampdel` | Activate clone evolutionary contraints | User can decide whether to enable or not constrained about the evolution of tumor clones. These constrained force each allele to be either amplified or deleted across all tumor clones | Activated |
 | `--ampdel-exempt` | Clusters exempt from the amp-del constraint | Comma-separated cluster IDs (as in the SEG `#ID` column) that may be both amplified and deleted across tumor clones while the amp-del constraint stays active for every other cluster. Cannot be combined with `--noampdel` | None |
-| `-d`, `--cnstates` | Maximum number of distinct copy-number states per cluster | When enabled, the maximum number of distinct copy-number states per cluster is fixed. This option is deprecated | Not used |
+| `-d`, `--cnstates` | Maximum number of distinct tumor copy-number states per cluster | When set, each cluster may take at most this many distinct allele-specific states across the tumor clones (the normal clone is not counted, so `1` makes every cluster clonal) | Not used |
+| `--cnstates-exempt` | Clusters exempt from `--cnstates` | Comma-separated cluster IDs (as in the SEG `#ID` column) that may take up to one state per tumor clone while every other cluster keeps the `--cnstates` limit. Requires `--cnstates`; cannot be combined with `--cluster-cnstates` | None |
+| `--cluster-cnstates` | Cluster-specific limits on tumor copy-number states | Comma-separated `ID:INT` pairs giving clusters their own limit, overriding `--cnstates` (or applying alone when `--cnstates` is not set). Cannot be combined with `--cnstates-exempt` | None |
 | `--fixed-matrix` | Fixed factorization entries | Path to a sparse TSV file containing entries of the copy-number matrices `A` and `B` or mixture matrix `U` that must remain fixed during solving | None |
 
 HATCHet implements two methods to solve the constrained and distance-based simultaneous factorization: (1) a integer-linear programming (ILP) and (2) a coordinate-descent method (CD).
@@ -125,6 +127,16 @@ In addition, the solving methods can be controlled by the following parameters.
 `--max-homdel-size` is expressed as a fraction in `[0, 1]`, not as a percentage, and its cutoff is inclusive. For example, the default `0.005` prevents a cluster covering exactly 0.5% or more of the total cluster weight from receiving `(0, 0)` in a tumor clone. This constraint is independent of the amp/del option and is applied by both the Pyomo and native solvers, including coordinate-descent copy-number steps and the Pyomo bin-wise objective.
 
 The equivalent `[compute_cn]` INI setting is `maxhomdelsize = 0.005`. It can also be overridden with the `HATCHET_COMPUTE_CN_MAXHOMDELSIZE` environment variable.
+
+`--cnstates` limits the number of distinct allele-specific copy-number states that a cluster may take across the tumor clones. It suits patients with many samples but little heterogeneity, where most of the genome is expected to be clonal or to have only a few subclonal states, but where unconstrained solutions add clones that differ only at a few clusters. A limit applies to every cluster except:
+
+- clusters listed in `--cnstates-exempt`, which may take up to one state per tumor clone;
+- clusters given their own limit in `--cluster-cnstates`, which use that limit instead;
+- clonal clusters (`-c`), whose copy numbers are fixed, and any cluster whose limit is at least the number of tumor clones, because such a limit cannot bind.
+
+Only one of `--cnstates-exempt` and `--cluster-cnstates` may be used. Their INI keys are `cnstatesexempt` and `clustercnstates` in the `[compute_cn]` section. An ID that is not in the SEG file is an error. Both the Pyomo and native solvers apply the limits, in every solving mode and in fixed-matrix and sample-clonal validation.
+
+Each limited cluster with limit `D` gets one assignment binary per tumor clone and slot (restricted to slots in order of first use, so tumor clone `t` only uses the first `t` slots), `2D` continuous slot states, and about `5·(n−1)·D` linear constraints, where `n−1` is the number of tumor clones. Exempt clusters add nothing. The size grows linearly in the number of clones and in `D`, and coordinate-descent steps need no binary expansion of the copy numbers. As an example, with 162 clusters, 7 tumor clones and `D = 3`, the limit adds about 15k rows to a coordinate-descent step of about 15k rows, and about 7% to the exact ILP. Runtime depends on the data, because the limit shrinks the search space while adding binaries. A limit can only keep or raise the objective at a given number of clones, so it can change which number of clones is selected, which is its purpose.
 
 `--ampdel-exempt` relaxes the amp-del constraint for the listed clusters only. Each allele of an exempt cluster may then be above its baseline in some tumor clones and below it in others (the baseline is 1 copy per allele without a WGD and 2 with a WGD). Listing a clonal cluster has no effect, since its copy numbers are already fixed. An ID that is not in the SEG file is an error. The option can also be set as `ampdelexempt` in the `[compute_cn]` section of `hatchet.ini`, and it applies to both the Pyomo and native solvers, including fixed-matrix and sample-clonal validation. Each exempt cluster removes 2 binary variables and `4 × (number of tumor clones)` linear constraints from the factorization, so memory use is essentially unchanged. Coordinate-descent runtime is expected to fall between the runs with and without `--noampdel`. Because exemptions relax the problem, the objective at a given number of clones can only stay the same or improve (up to the heuristic nature of coordinate descent), and this can change which number of clones is selected.
 
@@ -251,7 +263,7 @@ HATCHET_COMPUTE_CN_SAMPLECLONALFILE=/path/to/patient.sample-clonal.tsv
 - The same cluster may have different states in different samples. In that case, a shared tumor clone cannot be present in both samples unless it satisfies both states.
 - Clone-count ranges remain supported because the input does not name tumor clone columns. The solver reports an error when too few tumor clones are available to satisfy incompatible sample states.
 - A `--fixed-matrix` file may be used simultaneously. Fixed-positive tumor clones must satisfy the corresponding sample-clonal states, fixed normal proportions must match derived purity, and remaining tumor purity must be assignable to a compatible clone.
-- Required states, including additional states, must satisfy the active `--diploidcmax` or `--tetraploidcmax`, amp/del constraints, the deprecated `--cnstates` limit, and the existing nonzero constraint for large clusters.
+- Required states, including additional states, must satisfy the active `--diploidcmax` or `--tetraploidcmax`, amp/del constraints, the `--cnstates` limit of each cluster, and the existing nonzero constraint for large clusters.
 
 
 ## [EXPERT OPTION] Fixing entries of A, B, and U
@@ -352,7 +364,7 @@ HATCHet validates the auxiliary file before optimization and reports the source 
 - `--minprop`: a fixed tumor proportion must be 0 or at least the configured minimum, within numerical tolerance.
 - `--diploidcmax` and `--tetraploidcmax`: fixed copy numbers and fully specified A+B totals must satisfy the active branch's bounds.
 - Amp/del constraints: when enabled, fixed values cannot force the same allele to be both amplified and deleted across tumor clones for one cluster.
-- `--cnstates`: fully specified states count toward the configured limit, although this option remains deprecated.
+- `--cnstates`: fully specified states count toward each cluster's limit (see `--cnstates-exempt` and `--cluster-cnstates`).
 - `--max-homdel-size`: a tumor state of `(0, 0)` is not allowed for a cluster whose fraction of total cluster weight is at or above the configured cutoff.
 - Mixture sums: fixed U entries for a sample may sum to at most 1. If the entire column is fixed, it must sum to 1. Any remaining mass must be assignable under `--minprop`.
 

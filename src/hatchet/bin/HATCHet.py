@@ -90,6 +90,27 @@ def parsing_arguments(args=None):
         ),
     )
     parser.add_argument(
+        '--cnstates-exempt',
+        type=str,
+        required=False,
+        default=config.compute_cn.cnstatesexempt,
+        help=(
+            'Comma-separated cluster IDs exempt from -d/--cnstates, which may take up to one state per tumor clone '
+            'while every other cluster keeps the -d limit. Cannot be combined with --cluster-cnstates (default: none)'
+        ),
+    )
+    parser.add_argument(
+        '--cluster-cnstates',
+        type=str,
+        required=False,
+        default=config.compute_cn.clustercnstates,
+        help=(
+            'Comma-separated ID:INT pairs giving clusters their own maximum number of distinct tumor copy-number '
+            'states; other clusters use -d/--cnstates, or no limit without it. Cannot be combined with '
+            '--cnstates-exempt (default: none)'
+        ),
+    )
+    parser.add_argument(
         '-c',
         '--clonal',
         type=str,
@@ -402,6 +423,29 @@ def parsing_arguments(args=None):
             raise ValueError(error('No cluster IDs were given to --ampdel-exempt!'))
         if args.noampdel:
             raise ValueError(error('--ampdel-exempt cannot be used with --noampdel, which disables amp-del!'))
+    cnstates_exempt = None
+    if args.cnstates_exempt is not None:
+        cnstates_exempt = list(dict.fromkeys(c.strip() for c in str(args.cnstates_exempt).split(',') if c.strip()))
+        if not cnstates_exempt:
+            raise ValueError(error('No cluster IDs were given to --cnstates-exempt!'))
+        if args.cnstates is None:
+            raise ValueError(error('--cnstates-exempt requires a global -d/--cnstates limit to exempt clusters from!'))
+    cluster_cnstates = None
+    if args.cluster_cnstates is not None:
+        cluster_cnstates = {}
+        for pair in (p.strip() for p in str(args.cluster_cnstates).split(',') if p.strip()):
+            cluster, _, limit = (part.strip() for part in pair.rpartition(':'))
+            if not cluster or not limit.lstrip('-').isdigit():
+                raise ValueError(error(f'--cluster-cnstates entries must be ID:INT pairs, not "{pair}"!'))
+            if int(limit) <= 0:
+                raise ValueError(error(f'The cnstates limit of cluster {cluster} must be a positive integer!'))
+            if cluster in cluster_cnstates:
+                raise ValueError(error(f'Cluster {cluster} is given more than once to --cluster-cnstates!'))
+            cluster_cnstates[cluster] = int(limit)
+        if not cluster_cnstates:
+            raise ValueError(error('No cluster IDs were given to --cluster-cnstates!'))
+    if cnstates_exempt and cluster_cnstates:
+        raise ValueError(error('Use only one of --cnstates-exempt and --cluster-cnstates!'))
     if args.diploidcmax == 0:
         args.diploidcmax = None
     if args.diploidcmax is not None and args.diploidcmax <= 0:
@@ -481,6 +525,8 @@ def parsing_arguments(args=None):
         'ampdel': not args.noampdel,
         'ampdel_exempt': ampdel_exempt,
         'd': args.cnstates,
+        'cnstates_exempt': cnstates_exempt,
+        'cluster_cnstates': cluster_cnstates,
         'max_homdel_size': args.max_homdel_size,
         'eD': args.diploidcmax,
         'eT': args.tetraploidcmax,
@@ -565,6 +611,10 @@ def main(args=None):
         unknown = [cluster for cluster in args['ampdel_exempt'] if cluster not in seg]
         if unknown:
             raise ValueError(error('Amp-del exempt clusters not found in SEG file: {}'.format(', '.join(unknown))))
+    limited = list(args.get('cnstates_exempt') or ()) + list(args.get('cluster_cnstates') or ())
+    unknown = [cluster for cluster in limited if cluster not in seg]
+    if unknown:
+        raise ValueError(error('cnstates clusters not found in SEG file: {}'.format(', '.join(unknown))))
     samples = ssamples
     if args['purities']:
         assert len(args['purities']) == len(samples), error(
@@ -1098,6 +1148,11 @@ def makeBaseCMD(args, e):
             basecmd += ' --ampdel-exempt {}'.format(shlex.quote(','.join(args['ampdel_exempt'])))
     if args['d'] is not None:
         basecmd += ' -d {}'.format(args['d'])
+        if args.get('cnstates_exempt'):
+            basecmd += ' --cnstates-exempt {}'.format(shlex.quote(','.join(args['cnstates_exempt'])))
+    if args.get('cluster_cnstates'):
+        pairs = ','.join('{}:{}'.format(cluster, limit) for cluster, limit in args['cluster_cnstates'].items())
+        basecmd += ' --cluster-cnstates {}'.format(shlex.quote(pairs))
     if e is not None:
         basecmd += ' -e {}'.format(e)
     if args['j'] is not None:
@@ -1405,6 +1460,8 @@ def execute_python(solver, args, n, outprefix):
         sample_clonal=args['sample_clonal_entries'],
         max_homdel_size=args.get('max_homdel_size', 0.005),
         ampdel_exempt=args.get('ampdel_exempt'),
+        cnstates_exempt=args.get('cnstates_exempt'),
+        cluster_cnstates=args.get('cluster_cnstates'),
     )
     if result is None:
         raise RuntimeError('No feasible solution found for the requested constraints')

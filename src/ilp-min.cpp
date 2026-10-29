@@ -20,7 +20,7 @@ IlpSubset::IlpSubset(const int n,
                      const int m,
                      const int k,
                      const int cmax,
-                     const int d,
+                     const IntArray& cnstates,
                      const double mu,
                      const double maxHomdelSize,
                      const int base,
@@ -38,7 +38,7 @@ IlpSubset::IlpSubset(const int n,
     , _m(m)
     , _k(k)
     , _cmax(cmax)
-    , _d(d)
+    , _cnstates(cnstates)
     , _mu(mu)
     , _maxHomdelSize(maxHomdelSize)
     , _base(base)
@@ -132,13 +132,13 @@ void IlpSubset::init()
 {
     computeFixedBounds();
     buildVariables();
-    if(_d > 0 && (_mode == MODE_t::FULL || _mode == MODE_t::CARCH))
+    if(anyStateLimit() && (_mode == MODE_t::FULL || _mode == MODE_t::CARCH))
     {
         buildOptionalVariables();
     }
 
     buildConstraints();
-    if(_d > 0 && (_mode == MODE_t::FULL || _mode == MODE_t::CARCH))
+    if(anyStateLimit() && (_mode == MODE_t::FULL || _mode == MODE_t::CARCH))
     {
         buildOptionalConstraints();
     }
@@ -190,6 +190,10 @@ void IlpSubset::hotStart(const IntMatrix& hCA, const IntMatrix& hCB, const Doubl
                     _bitcB[b][s][i].set(GRB_DoubleAttr_Start, (hCB[s][i] >> b) & 1);
                 }
             }
+        }
+        if(!_sA.empty() && !_sA[s].empty())
+        {
+            startSlots(s, hCA[s], hCB[s]);
         }
 
         if(ampdelApplies(s))
@@ -401,61 +405,24 @@ void IlpSubset::printValues()
 
 
 std::pair<IntMatrix, IntMatrix> IlpSubset::firstHotStart(const DoubleMatrix &FA, const DoubleMatrix &FB, const int m, const int k, const int n,
-                                                         const int cmax, const int d, const int base, const bool ampdel, const IntSet& ampdelExempt,
+                                                         const int cmax, const IntArray& cnstates, const int base, const bool ampdel, const IntSet& ampdelExempt,
                                                          const CNMap& cn)
 {
-    IntMatrix targetA;
-    IntMatrix targetB;
-    if(d > 0)
+    // Tumor clone i starts from sample i % min(n, k). Under a state limit, clone i starts from the ((i - 1) % limit)-th
+    // of `limit` random samples instead, so the start has at most `limit` states.
+    IntMatrix startSample(m, IntArray(n, 0));
+    for(int s = 0; s < m; ++s)
     {
-        IntMatrix optionsA(m);
-        IntMatrix optionsB(m);
-        for(int s = 0; s < m; ++s)
+        const int limit = stateLimit(cnstates, cn, n, s);
+        IntArray samples(k);
+        if(limit > 0)
         {
-            optionsA[s] = IntArray();
-            optionsB[s] = IntArray();
-            for(int p = 0; p < k; ++p)
-            {
-                optionsA[s].push_back((int)std::round(FA[s][p]));
-                optionsB[s].push_back((int)std::round(FB[s][p]));
-            }
-            std::shuffle(optionsA[s].begin(), optionsA[s].end(), g_rng);
-            while(optionsA[s].size() > d)
-            {
-                optionsA[s].pop_back();
-                std::shuffle(optionsA[s].begin(), optionsA[s].end(), g_rng);
-            }
-            std::shuffle(optionsB[s].begin(), optionsB[s].end(), g_rng);
-            while(optionsB[s].size() > d)
-            {
-                optionsB[s].pop_back();
-                std::shuffle(optionsB[s].begin(), optionsB[s].end(), g_rng);
-            }
+            std::iota(samples.begin(), samples.end(), 0);
+            std::shuffle(samples.begin(), samples.end(), g_rng);
         }
-        targetA = IntMatrix(m);
-        targetB = IntMatrix(m);
-        for(int s = 0; s < m; ++s)
+        for(int i = 1; i < n; ++i)
         {
-            targetA[s] = IntArray(d);
-            targetB[s] = IntArray(d);
-            for(int l = 0; l < d; ++l)
-            {
-                targetA[s][l] = optionsA[s][l % optionsA[s].size()];
-                targetB[s][l] = optionsB[s][l % optionsB[s].size()];
-            }
-        }
-    } else {
-        targetA = IntMatrix(m);
-        targetB = IntMatrix(m);
-        for(int s = 0; s < m; ++s)
-        {
-            targetA[s] = IntArray(k);
-            targetB[s] = IntArray(k);
-            for(int p = 0; p < k; ++p)
-            {
-                targetA[s][p] = std::round(FA[s][p]);
-                targetB[s][p] = std::round(FB[s][p]);
-            }
+            startSample[s][i] = limit > 0 ? samples[((i - 1) % limit) % k] : i % std::min(n, k);
         }
     }
 
@@ -473,9 +440,8 @@ std::pair<IntMatrix, IntMatrix> IlpSubset::firstHotStart(const DoubleMatrix &FA,
             {
                 if(cn.count(s) == 0)
                 {
-                    int mod = std::min(n, k);
-                    int a = std::min(targetA[s][i % mod], cmax);
-                    int b = std::min(targetB[s][i % mod], cmax);
+                    int a = std::min(static_cast<int>(std::round(FA[s][startSample[s][i]])), cmax);
+                    int b = std::min(static_cast<int>(std::round(FB[s][startSample[s][i]])), cmax);
 
                     if(ampdel && ampdelExempt.count(s) == 0)
                     {
@@ -600,7 +566,7 @@ void IlpSubset::buildVariables()
         }
     }
 
-    if(_mode == MODE_t::FULL || (_d > 0 && _mode == MODE_t::CARCH))
+    if(needsBits())
     {
         _bitcA = Var3Matrix(_M);
         _bitcB = Var3Matrix(_M);
@@ -690,16 +656,40 @@ void IlpSubset::buildOptionalVariables()
     char buf[1024];
 
     _z = Var3Matrix(_m);
+    _sA = VarMatrix(_m);
+    _sB = VarMatrix(_m);
     for(int s = 0; s < _m; ++s)
     {
+        const int limit = stateLimit(s);
+        if(limit == 0)
+        {
+            continue;
+        }
         _z[s] = VarMatrix(_n);
         for(int i = 1; i < _n; ++i)
         {
-            _z[s][i] = VarArray(_d);
-            for(int l = 0; l < _d; ++l)
+            // Slots are numbered by first use, so tumor clone i can only use the first i slots
+            const int slots = g_cnstatesFormulation == CNSTATES_SLOT ? std::min(i, limit) : limit;
+            _z[s][i] = VarArray(slots);
+            for(int l = 0; l < slots; ++l)
             {
                 snprintf(buf, 1024, "z_%d_%d_%d", s+1, i+1, l+1);
                 _z[s][i][l] = _model.addVar(0, 1, 0, GRB_BINARY, buf);
+            }
+        }
+
+        if(g_cnstatesFormulation == CNSTATES_SLOT)
+        {
+            // Continuous: a used slot equals an integer copy number, and an unused slot needs no branching
+            _sA[s] = VarArray(limit);
+            _sB[s] = VarArray(limit);
+            for(int l = 0; l < limit; ++l)
+            {
+                snprintf(buf, 1024, "sA_%d_%d", s+1, l+1);
+                _sA[s][l] = _model.addVar(0, upperCN(s), 0, GRB_CONTINUOUS, buf);
+
+                snprintf(buf, 1024, "sB_%d_%d", s+1, l+1);
+                _sB[s][l] = _model.addVar(0, upperCN(s), 0, GRB_CONTINUOUS, buf);
             }
         }
     }
@@ -786,7 +776,7 @@ void IlpSubset::buildConstraints()
 
     }
 
-    if(_mode == MODE_t::FULL || (_d > 0 && _mode == MODE_t::CARCH))
+    if(needsBits())
     {
         for(int s = 0; s < _m; ++s)
         {
@@ -961,59 +951,132 @@ void IlpSubset::buildOptionalConstraints()
 {
     for(int s = 0; s < _m; ++s)
     {
+        const int limit = stateLimit(s);
+        if(limit == 0)
+        {
+            continue;
+        }
+
         for(int i = 1; i < _n; ++i)
         {
             GRBLinExpr sum;
             sum = 0;
-            for(int l = 0; l < _d; ++l)
+            for(int l = 0; l < static_cast<int>(_z[s][i].size()); ++l)
             {
                 sum += _z[s][i][l];
             }
             _model.addConstr(sum == 1);
         }
+
+        if(g_cnstatesFormulation == CNSTATES_SLOT)
+        {
+            buildSlotConstraints(s, limit);
+        } else {
+            buildPairwiseConstraints(s, limit);
+        }
     }
 
-    for(int s = 0; s < _m; ++s)
-    {
-        for(int b = 0; b < _M; ++b)
-        {
-            for(int l = 0; l < _d; ++l)
-            {
-                for(int i = 1; i < _n - 1; ++i)
-                {
-                    for(int j = i; j < _n; ++j)
-                    {
-                        _model.addConstr(_bitcA[b][s][i] - _bitcA[b][s][j] <= 2 - _z[s][i][l] - _z[s][j][l]);
-                        _model.addConstr(_bitcA[b][s][j] - _bitcA[b][s][i] <= 2 - _z[s][i][l] - _z[s][j][l]);
+    _model.update();
+}
 
-                        _model.addConstr(_bitcB[b][s][i] - _bitcB[b][s][j] <= 2 - _z[s][i][l] - _z[s][j][l]);
-                        _model.addConstr(_bitcB[b][s][j] - _bitcB[b][s][i] <= 2 - _z[s][i][l] - _z[s][j][l]);
-                    }
+
+/// Each tumor clone takes the state of the one slot whose z is 1. Slots are numbered in order of first use (restricted
+/// growth), which removes all slot symmetry: slot l is used only once an earlier clone uses slot l - 1.
+void IlpSubset::buildSlotConstraints(const int s, const int limit)
+{
+    const int upper = upperCN(s);
+    for(int i = 1; i < _n; ++i)
+    {
+        for(int l = 0; l < static_cast<int>(_z[s][i].size()); ++l)
+        {
+            _model.addConstr(_cA[s][i] - _sA[s][l] <= upper * (1 - _z[s][i][l]));
+            _model.addConstr(_sA[s][l] - _cA[s][i] <= upper * (1 - _z[s][i][l]));
+            _model.addConstr(_cB[s][i] - _sB[s][l] <= upper * (1 - _z[s][i][l]));
+            _model.addConstr(_sB[s][l] - _cB[s][i] <= upper * (1 - _z[s][i][l]));
+
+            if(l > 0)
+            {
+                GRBLinExpr earlier;
+                earlier = 0;
+                for(int j = l; j < i; ++j)
+                {
+                    earlier += _z[s][j][l - 1];
+                }
+                _model.addConstr(_z[s][i][l] <= earlier);
+            }
+        }
+    }
+}
+
+
+/// Clones sharing a slot have equal copy-number bits; slots are ordered by the weighted sum of their clones
+void IlpSubset::buildPairwiseConstraints(const int s, const int limit)
+{
+    for(int b = 0; b < _M; ++b)
+    {
+        for(int l = 0; l < limit; ++l)
+        {
+            for(int i = 1; i < _n - 1; ++i)
+            {
+                for(int j = i; j < _n; ++j)
+                {
+                    _model.addConstr(_bitcA[b][s][i] - _bitcA[b][s][j] <= 2 - _z[s][i][l] - _z[s][j][l]);
+                    _model.addConstr(_bitcA[b][s][j] - _bitcA[b][s][i] <= 2 - _z[s][i][l] - _z[s][j][l]);
+
+                    _model.addConstr(_bitcB[b][s][i] - _bitcB[b][s][j] <= 2 - _z[s][i][l] - _z[s][j][l]);
+                    _model.addConstr(_bitcB[b][s][j] - _bitcB[b][s][i] <= 2 - _z[s][i][l] - _z[s][j][l]);
                 }
             }
         }
     }
 
-    for(int s = 0; s < _m; ++s)
+    for(int l = 0; l < limit - 1; ++l)
     {
-        for(int l = 0; l < _d - 1; ++l)
+        GRBLinExpr sumL;
+        GRBLinExpr sumL1;
+        sumL = 0;
+        sumL1 = 0;
+        for(int i = 1; i < _n; ++i)
         {
-            GRBLinExpr sumL;
-            GRBLinExpr sumL1;
-            sumL = 0;
-            sumL1 = 0;
-            for(int i = 1; i < _n; ++i)
-            {
-                sumL += _z[s][i][l] * symmCoeff(i);
-                sumL1 += _z[s][i][l+1] * symmCoeff(i);
-            }
-            _model.addConstr(sumL <= sumL1);
-            sumL.clear();
-            sumL1.clear();
+            sumL += _z[s][i][l] * symmCoeff(i);
+            sumL1 += _z[s][i][l+1] * symmCoeff(i);
         }
+        _model.addConstr(sumL <= sumL1);
+    }
+}
+
+
+void IlpSubset::startSlots(const int s, const IntArray& hCA, const IntArray& hCB)
+{
+    std::map<CNState, int> slots;
+    IntArray slotOf(_n, -1);
+    for(int i = 1; i < _n; ++i)
+    {
+        const CNState state(hCA[i], hCB[i]);
+        if(slots.count(state) == 0)
+        {
+            const int next = static_cast<int>(slots.size());
+            slots[state] = next;
+        }
+        slotOf[i] = slots.at(state);
+    }
+    if(slots.size() > _sA[s].size())
+    {
+        return; // e.g. a fixed-matrix overlay added states; the solver completes the start
     }
 
-    _model.update();
+    for(auto const& slot : slots)
+    {
+        _sA[s][slot.second].set(GRB_DoubleAttr_Start, slot.first.first);
+        _sB[s][slot.second].set(GRB_DoubleAttr_Start, slot.first.second);
+    }
+    for(int i = 1; i < _n; ++i)
+    {
+        for(int l = 0; l < static_cast<int>(_z[s][i].size()); ++l)
+        {
+            _z[s][i][l].set(GRB_DoubleAttr_Start, l == slotOf[i] ? 1.0 : 0.0);
+        }
+    }
 }
 
 

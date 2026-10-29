@@ -3,6 +3,7 @@
 std::mt19937_64 g_rng;
 std::mutex g_mutex;
 std::mutex g_output_mutex;
+CNSTATES_FORMULATION_t g_cnstatesFormulation = CNSTATES_SLOT;
 
 int countElements(const IntMatrix arg)
 {

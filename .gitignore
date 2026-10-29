@@ -1,4 +1,7 @@
+benchmarks/2026-10-25-cnstates-cluster-limits/hatchet-cnstates-bench*.log
+tests/out
 *.sh
+!benchmarks/**/*.sh
 *-1.7
 CLAUDE.md
 ai-logs/2026-09-24-preprocessing-efficiency/temp

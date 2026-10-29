@@ -293,7 +293,7 @@ void SampleClonal::validate(const int cmax,
                             const int base,
                             const bool ampdel,
                             const IntSet& ampdelExempt,
-                            const int cnstates,
+                            const IntArray& cnstates,
                             const DoubleArray& weights,
                             const DoubleArray& purities,
                             const double maxHomdelSize) const
@@ -326,15 +326,13 @@ void SampleClonal::validate(const int cmax,
         alleleBByCluster[entry->cluster].push_back(entry->cnB);
     }
 
-    if(cnstates > 0)
+    for(std::map<int, std::set<CNState> >::const_iterator states = statesByCluster.begin();
+        states != statesByCluster.end(); ++states)
     {
-        for(std::map<int, std::set<CNState> >::const_iterator states = statesByCluster.begin();
-            states != statesByCluster.end(); ++states)
+        const int limit = segmentCnstates(cnstates, states->first);
+        if(limit > 0 && static_cast<int>(states->second.size()) > limit)
         {
-            if(static_cast<int>(states->second.size()) > cnstates)
-            {
-                throw _source + ": sample-clonal states require more copy-number states than allowed";
-            }
+            throw _source + ": sample-clonal states require more copy-number states than allowed";
         }
     }
     if(ampdel)

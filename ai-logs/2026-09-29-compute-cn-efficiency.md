@@ -1,5 +1,7 @@
 # compute_cn Solver Efficiency
 
+> 2026-10-25: the benchmark and verification scripts of this log moved to `benchmarks/2026-09-29-compute-cn-efficiency/` (shared `measure.py`: `benchmarks/common/measure.py`); job logs stay in `ai-logs/`. See `ai-logs/2026-10-25-CNSTATES_CLUSTER_LIMITS.md`.
+
 ## Status
 
 - Overall: Implemented and verified on test fixtures; real-data benchmark script ready, run pending (user)
@@ -105,8 +107,8 @@ stagger Gurobi environment/license startup, so it should be tested before remova
 The first benchmark command in this log (2026-09-29) did not run. `compute-cn` requires the `-x` running directory to
 exist ("Running directory not found!"), the `<BBC_PREFIX>` placeholder was never filled in, and `hatchet` in the
 `hatchet-test` env is a stale non-editable install (site-packages 2.1.0), so it would not have run the workspace code
-anyway. It is replaced by `ai-logs/2026-09-29-compute-cn-efficiency/bench_compute_cn.sh`, which follows the pattern of
-`2026-09-24-preprocessing-efficiency/wgs_compare.sh`:
+anyway. It is replaced by `benchmarks/2026-09-29-compute-cn-efficiency/bench_compute_cn.sh`, which follows the pattern of
+`benchmarks/2026-09-24-preprocessing-efficiency/wgs_compare.sh`:
 
 - The dataset is the `BBC` variable, defaulting to
   `/data1/shahs3/users/myersm2/repos/osteo/results/hatchet2/IID_H134708/bbc/bulk.bbc` (165 clusters, 9 samples). The
@@ -122,10 +124,10 @@ anyway. It is replaced by `ai-logs/2026-09-29-compute-cn-efficiency/bench_comput
   `HATCHET_COMPUTE_CN_SOLVER` forces the solver.
 - The preflight validates the exact arguments with `compute-cn`'s own `parsing_arguments` without solving.
 - `compare_compute_cn.py` writes `<WORK>/summary.md`. It reports wall/CPU/peak memory (via the existing
-  `2026-09-24-preprocessing-efficiency/measure.py`), C/U step counts and times, the objective per ploidy and clone
+  `benchmarks/common/measure.py`), C/U step counts and times, the objective per ploidy and clone
   count, the chosen model, and whether the chosen solution's clones are in canonical order.
 
-Commands (from `ai-logs/2026-09-29-compute-cn-efficiency/`):
+Commands (from `benchmarks/2026-09-29-compute-cn-efficiency/`):
 
 ```bash
 PREFLIGHT_ONLY=1 bash bench_compute_cn.sh      # ~20 s: builds both solvers, validates arguments, no solving
@@ -289,11 +291,11 @@ Build artifact
 
 ### 2026-09-30: benchmark fix
 
-33. Added `ai-logs/2026-09-29-compute-cn-efficiency/bench_compute_cn.sh`.
+33. Added `benchmarks/2026-09-29-compute-cn-efficiency/bench_compute_cn.sh`.
     *Why:* the benchmark command in this log failed (missing running directory, placeholder input, stale `hatchet`
     install). The script takes the dataset as `BBC` (default: the osteo `IID_H134708` BBC), uses that dataset's
     `compute_cn` settings, builds both solvers, validates arguments before solving, and runs both versions on one node.
-34. Added `ai-logs/2026-09-29-compute-cn-efficiency/compare_compute_cn.py`.
+34. Added `benchmarks/2026-09-29-compute-cn-efficiency/compare_compute_cn.py`.
     *Why:* it turns the runs into one comparable summary (time, memory, step times, objectives, chosen model, clone order).
 35. This log: rewrote "User benchmark", updated "Status", and added this section.
     *Why:* the old instructions were wrong, and the user's instructions require an exhaustive change list.
