@@ -1,3 +1,7 @@
+coordinate_descence.tsv
+CMakeFiles
+.claude
+*.recall*
 benchmarks/2026-10-25-cnstates-cluster-limits/hatchet-cnstates-bench*.log
 tests/out
 *.sh
